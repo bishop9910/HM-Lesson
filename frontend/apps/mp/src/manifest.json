@@ -1,0 +1,19 @@
+{
+  "name": "鹤鸣作业本",
+  "appid": "__UNI__HM_LESSON",
+  "description": "作业收集与课时管理工具",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true,
+    "lazyCodeLoading": "requiredComponents"
+  },
+  "vueVersion": "3"
+}

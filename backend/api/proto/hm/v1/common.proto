@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package hm.v1;
+
+option go_package = "github.com/bishop9910/hm-lesson/backend/gen/hm/v1;hmv1";
+
+// 统一分页请求；page_size 上限由服务端限制（默认 20，最大 100）。
+message PageRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message PageResponse {
+  int32 page = 1;
+  int32 page_size = 2;
+  int64 total = 3;
+}
+
+message Empty {}

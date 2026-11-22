@@ -1,0 +1,21 @@
+server:
+  http_addr: 0.0.0.0:8080
+  read_timeout: 15s
+  write_timeout: 15s
+  idle_timeout: 60s
+
+data:
+  database:
+    driver: mysql
+    dsn: ${HM_DB_DSN}
+  storage:
+    driver: minio
+    bucket: hm-dev
+
+log:
+  level: info
+  format: json
+
+app:
+  env: dev
+  timezone: Asia/Shanghai

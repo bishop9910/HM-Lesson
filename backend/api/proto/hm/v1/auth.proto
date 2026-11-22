@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package hm.v1;
+
+import "google/api/annotations.proto";
+import "hm/v1/common.proto";
+
+option go_package = "github.com/bishop9910/hm-lesson/backend/gen/hm/v1;hmv1";
+
+// 教师登录：手机号 + 密码（Argon2id）。
+service AuthService {
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/login"
+      body: "*"
+    };
+  }
+  rpc Me(Empty) returns (MeResponse) {
+    option (google.api.http) = { get: "/api/v1/auth/me" };
+  }
+  rpc Logout(Empty) returns (Empty) {
+    option (google.api.http) = { post: "/api/v1/auth/logout" };
+  }
+}
+
+message LoginRequest {
+  string phone = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  Staff staff = 2;
+}
+
+message MeResponse {
+  Staff staff = 1;
+}
+
+message Staff {
+  string id = 1;
+  string name = 2;
+  string phone = 3;
+  string role = 4; // owner | assistant
+}

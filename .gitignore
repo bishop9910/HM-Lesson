@@ -1,0 +1,39 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# graph tooling
+.graphflow/
+graphflow-out/
+.dsh-acl-recovery/
+
+# Go
+backend/bin/
+backend/gen/
+*.test
+
+# frontend
+node_modules/
+frontend/**/dist/
+frontend/**/node_modules/
+frontend/**/.vite/
+frontend/**/coverage/
+frontend/**/*.tsbuildinfo
+.pnpm-store/
+
+# local tool caches
+.gocache/
+backend/.cache/
+
+# logs / temp
+*.log
+tmp/

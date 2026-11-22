@@ -1,0 +1,11 @@
+{
+  "name": "hm-lesson-frontend",
+  "private": true,
+  "packageManager": "pnpm@12.21.0",
+  "scripts": {
+    "dev:mp-weixin": "pnpm --filter @hm/mp dev:mp-weixin",
+    "build:mp-weixin": "pnpm --filter @hm/mp build:mp-weixin",
+    "typecheck": "pnpm --filter @hm/mp typecheck",
+    "test": "pnpm --filter @hm/mp test"
+  }
+}

@@ -1,0 +1,44 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: hm-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_password
+      MYSQL_DATABASE: hm_lesson
+      MYSQL_USER: hm
+      MYSQL_PASSWORD: hm_dev_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - hm-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uhm", "-phm_dev_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: hm-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: hm_minio
+      MINIO_ROOT_PASSWORD: hm_minio_dev_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - hm-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hm-mysql-data:
+  hm-minio-data:

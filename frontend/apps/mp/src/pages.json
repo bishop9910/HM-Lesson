@@ -1,0 +1,37 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
+    }
+  },
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "鹤鸣作业本",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/bind/index",
+      "style": { "navigationBarTitleText": "绑定学员" }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "pkg-teacher",
+      "pages": [
+        {
+          "path": "pages/workbench/index",
+          "style": { "navigationBarTitleText": "教师工作台" }
+        }
+      ]
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#F0FDFA",
+    "backgroundColor": "#F8FAFC"
+  }
+}

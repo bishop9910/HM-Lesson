@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package hm.v1;
+
+import "google/api/annotations.proto";
+import "hm/v1/common.proto";
+
+option go_package = "github.com/bishop9910/hm-lesson/backend/gen/hm/v1;hmv1";
+
+// 学员档案（教师端）。家长端走 /portal/*，不在本服务暴露。
+service StudentService {
+  rpc ListStudents(ListStudentsRequest) returns (ListStudentsResponse) {
+    option (google.api.http) = { get: "/api/v1/students" };
+  }
+  rpc GetStudent(GetStudentRequest) returns (Student) {
+    option (google.api.http) = { get: "/api/v1/students/{id}" };
+  }
+  rpc CreateStudent(CreateStudentRequest) returns (Student) {
+    option (google.api.http) = {
+      post: "/api/v1/students"
+      body: "*"
+    };
+  }
+}
+
+message Student {
+  string id = 1;
+  string name = 2;
+  string grade = 3;
+  string school = 4;
+  string group = 5;   // 班课在读/一对一在读/待转化意向/咨询访客
+  string status = 6;  // 在读/结课归档/流失
+  repeated string tags = 7;
+  string next_follow_up_at = 8;
+  string note = 9;
+}
+
+message ListStudentsRequest {
+  PageRequest page = 1;
+  string keyword = 2;
+  string group = 3;
+  string status = 4;
+}
+
+message ListStudentsResponse {
+  repeated Student items = 1;
+  PageResponse page = 2;
+}
+
+message GetStudentRequest {
+  string id = 1;
+}
+
+message CreateStudentRequest {
+  string name = 1;
+  string grade = 2;
+  string school = 3;
+  string group = 4;
+  repeated string tags = 5;
+  string note = 6;
+}
