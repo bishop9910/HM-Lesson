@@ -2,11 +2,11 @@
 
 > 配套：[backend-requirements.md](backend-requirements.md) §3 业务规则
 > 目标数据库：**MySQL 8.0**（本地 Docker 容器 / 生产云托管 MySQL，Q22 已确认）
-> 迁移工具：golang-migrate v4（SQL 文件内嵌进二进制）
+> 迁移方式：按版本执行 `backend/migrations/*.sql`（成对 up/down），启动时 `data.Migrate` 加锁执行（ADR-003）
 > 原则：**约束优先于代码**——能在数据库层表达的（唯一、外键、检查、唯一索引）就不要只写在 Service 里。
 
 > ⚠️ **方言说明（2026-11-22 已确认 MySQL 8.0）**
-> 目标库为 **MySQL 8.0**（本地容器 / 生产云托管）。本文档 §2–§12 的字段表沿用 PostgreSQL 类型描述**逻辑模型**（表、字段、语义、状态机不变）；**实际建表语句以 [`backend/migrations/000001_init.up.sql`](../backend/migrations/000001_init.up.sql)、[`000002_teaching.up.sql`](../backend/migrations/000002_teaching.up.sql) 为准**，已按 MySQL 方言编写。两种方言的映射见 §1.1；新迁移一律用 MySQL 语法，不要再照抄 PG 类型。
+> 目标库为 **MySQL 8.0**（本地容器 / 生产云托管）。本文档 §2–§12 的字段表沿用 PostgreSQL 类型描述**逻辑模型**（表、字段、语义、状态机不变）；**实际建表语句以 [`backend/migrations/000001_init.up.sql`](../backend/migrations/000001_init.up.sql)、[`000002_teaching.up.sql`](../backend/migrations/000002_teaching.up.sql) 为准**，已按 MySQL 方言编写，down 脚本随版本成对提供。两种方言的映射见 §1.1；新增脚本一律用 MySQL 语法，不要再照抄 PG 类型。
 
 ---
 
@@ -618,38 +618,35 @@ stateDiagram-v2
 
 分页一律 `ORDER BY <有索引列> + id`，避免深分页；超过 10 万行的导出走异步。
 
-## 6. 迁移规范
+## 6. 迁移规范（ADR-003）
 
 ### 6.1 文件与执行
 
-- 位置：`backend/migrations/`，命名 `000001_init.up.sql` / `000001_init.down.sql`，序号连续。
-- 打包：`//go:embed migrations/*.sql` + `golang-migrate/source/iofs`，`cmd/migrate` 支持 `-up`、`-down N`、`-version`、`-force V`。
-- 生产：只执行 `up`；`down` 仅本地/测试。发布流程：`migrate -up` → 校验 → 滚动更新 `api`/`job`。
-- 每个迁移必须**幂等可重放**（本地反复 `up/down/up` 通过）。
-- 大表加索引用 `CREATE INDEX CONCURRENTLY` 时，单独成文件并确认 golang-migrate 的非事务执行方式；小表直接 `CREATE INDEX`。
+- 位置：`backend/migrations/`，命名 `NNNN_<snake_case>.up.sql` / `.down.sql`，成对提供、序号连续；一次迁移只做一件事。
+- 打包：`//go:embed *.sql`（`migrations/embed.go`）；服务启动时 `data.Migrate` 在**同一 MySQL 连接**上取 `GET_LOCK('hm_migrate', 30)`，读取 `schema_migrations` 当前版本，按版本顺序执行未应用的 `up`，完成后释放锁，失败 fail fast。
+- 版本表：`schema_migrations(version BIGINT PRIMARY KEY, name VARCHAR(128), applied_at DATETIME(3))`；`cmd/migrate` 提供手工 `up` / `down -n` / `version`。
+- 当前文件：`000001_init.up/down.sql`（账号/家长/学员/关系/绑定码/导入批次/文件/审计/job/outbox/幂等/黑名单/设置）、`000002_teaching.up/down.sql`（跟进/任务/提交/时段/预约/课时/班课/资料/通知/回执）。
 
 ### 6.2 规则
 
-1. 已合并到 `main` 并执行过的迁移**禁止修改**；修复用新迁移。
-2. 不用 `DROP COLUMN` 直接删线上字段；先停用（保留至少一个版本），再删。
-3. 新增 `NOT NULL` 列必须给默认值或分三步（加可空列 → 回填 → 加约束）。
-4. 外键默认 `ON DELETE RESTRICT`；禁止 `CASCADE` 删除业务数据。
-5. 约束命名固定：`pk_`、`fk_`、`uq_`、`idx_`、`ck_`、`ex_`。
-6. 每个迁移文件头部注释：目的、影响表、是否锁表、回滚风险。
-7. 迁移与代码同 PR；CI 在空库上跑 `up`，再跑集成测试。
+1. `backend/migrations/*.up.sql` 是唯一事实来源；禁止手改数据库结构后不回填迁移。
+2. 新增/修改表 → 新建 `NNNN_*.up.sql` + `.down.sql`；**已发布的迁移不得修改**，修复用新迁移。
+3. 不用 `DROP COLUMN` 直接删线上字段；先停用（保留至少一个版本），再删。
+4. 新增 `NOT NULL` 列必须给默认值或分三步（加可空列 → 回填 → 加约束）。
+5. 外键默认 `ON DELETE RESTRICT`；禁止 `CASCADE` 删除业务数据。
+6. 约束命名固定：`pk_`、`fk_`、`uq_`、`idx_`、`ck_`、`ex_`。
+7. 每个脚本头部注释：目的、影响表、是否锁表、回滚风险。
+8. 迁移与代码同 PR；CI 在空库上执行 `up → down → up`，验证可逆与幂等。
+9. 生产只前进；回滚优先“新迁移补偿”，破坏性 down 必须备份并人工确认。
 
-### 6.3 初始化迁移拆分
+### 6.3 预上线拆分与种子
 
-| 序号 | 内容 |
+| 文件 | 内容 |
 | --- | --- |
-| 000001 | 扩展 + 账号/家长/学员/关系/标签/跟进/绑定码 |
-| 000002 | 任务/模板/assignment/submission/file_links |
-| 000003 | 时段/预约/课时账户/流水 |
-| 000004 | 班课/资料/通知/回执 |
-| 000005 | notifications/wx_subscriptions/files/exports/audit/settings/import_batches |
-| 000006 | 种子数据（标签、资料分类与矩阵、默认设置、owner 账号占位） |
+| 001_init | 账号/家长/学员/关系/绑定码/导入批次/文件/下载日志/审计/job/outbox/幂等/黑名单/设置 |
+| 002_teaching | 跟进/任务/assignment/submission/时段/预约/课时账户/流水/班课/成员/课次/资料/通知/回执 |
 
-> 种子里的 owner 密码从环境变量读取，禁止硬编码；首次登录强制改密（二期可做，一期至少文档提示）。
+> 首个 owner 由 `HM_BOOTSTRAP_NAME/PHONE/PASSWORD` 在库中无老师时创建，密码不硬编码；标签、资料分类与默认设置后续用 dev seed 写入，不放进 schema。
 
 ## 7. 种子数据
 
@@ -673,7 +670,7 @@ stateDiagram-v2
 | audit_logs | 5~20 万 | 2 年 |
 | files | 数十 GB | 随业务；孤儿 24h 清理 |
 
-- 备份：数据库每日全量（MySQL `mysqldump --single-transaction` / PG `pg_dump -Fc`，由腾讯云侧或 CI 执行）+ 云存储版本控制/跨地域复制；保留 7 日 + 4 周；每季度做一次恢复演练并记录。云托管 MySQL **无集成备份**，必须单独配置。
+- 备份：数据库每日全量（MySQL `mysqldump --single-transaction`，由腾讯云侧或 CI 执行）+ 云存储版本控制/跨地域复制；保留 7 日 + 4 周；每季度做一次恢复演练并记录。云托管 MySQL **无集成备份**，必须单独配置。
 - 个人敏感字段（手机号）日志脱敏；导出文件 7 天后自动删除。
 
 ## 9. 数据隔离的 SQL 模式（强制）
@@ -689,3 +686,5 @@ WHERE a.id = $2;
 ```
 
 禁止 `WHERE id = $2` 后再在应用层比对——必须在 SQL 层限定，避免漏判。仓储层提供 `WithGuardian(ctx, guardianID)` 作用域，评审时重点检查。
+
+

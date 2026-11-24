@@ -15,7 +15,7 @@ function goBind(): void {
 
 function goTeacher(): void {
   if (!session.isTeacher) {
-    uni.showToast({ title: "请先登录教师账号", icon: "none" });
+    uni.navigateTo({ url: "/pkg-teacher/pages/login/index" });
     return;
   }
   uni.navigateTo({ url: "/pkg-teacher/pages/workbench/index" });

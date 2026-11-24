@@ -20,6 +20,12 @@ type Config struct {
 	WXAppSecret   string
 	LogLevelName  string
 	Timezone      string
+
+	// 首次启动引导：库里没有任何老师时创建第一个 owner。
+	// 生产环境通过云托管环境变量注入，不要写默认密码。
+	BootstrapName     string
+	BootstrapPhone    string
+	BootstrapPassword string
 }
 
 func Load() Config {
@@ -37,6 +43,10 @@ func Load() Config {
 		WXAppSecret:   env("HM_WX_APP_SECRET", ""),
 		LogLevelName:  env("HM_LOG_LEVEL", "info"),
 		Timezone:      env("HM_TIMEZONE", "Asia/Shanghai"),
+
+		BootstrapName:     env("HM_BOOTSTRAP_NAME", "老师"),
+		BootstrapPhone:    env("HM_BOOTSTRAP_PHONE", ""),
+		BootstrapPassword: env("HM_BOOTSTRAP_PASSWORD", ""),
 	}
 }
 

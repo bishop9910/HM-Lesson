@@ -1,4 +1,4 @@
-# 架构决策记录（ADR）· HM-Lesson
+﻿# 架构决策记录（ADR）· HM-Lesson
 
 > 规则：任何**架构级**选择（框架、存储、协议、部署形态、安全模型）必须在此登记，格式统一为「背景 / 决定 / 理由 / 影响 / 回滚」。
 > 产品规则（状态机、权限矩阵、课时与预约规则）不放这里，放需求文档。
@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | ADR-001 | 后端采用 Go Kratos v3（而非 v2 / Gin） | 已采纳 |
 | ADR-002 | 数据库：PostgreSQL 17 + GORM v2/pgx | **已废弃**（Q22 确认 MySQL 8.0，见 ADR-023） |
-| ADR-003 | golang-migrate，SQL 迁移内嵌二进制 | 已采纳 |
+| ADR-003 | 版本化 SQL 迁移（格式与 golang-migrate 兼容，执行器见 ADR-028） | 已采纳 |
 | ADR-004 | 主键 UUIDv7（应用侧生成） | 已采纳 |
 | ADR-005 | 枚举用 `text/varchar + CHECK`，不用数据库原生 enum | 已采纳 |
 | ADR-006 | 对象存储 S3 抽象（初版 MinIO） | **已废弃**（生产改云托管 COS，见 ADR-022） |
@@ -30,9 +30,10 @@
 | ADR-022 | 生产对象存储用云托管 COS + fileID，S3 仅本地 dev | 已采纳（Q11 变更） |
 | ADR-023 | 数据库：MySQL 8.0（本地容器 / 生产云托管） | 已采纳（Q22 确认） |
 | ADR-024 | 单服务内嵌调度，`min=max=1` + 数据库锁 | 已采纳 |
-| ADR-025 | 迁移在启动时加锁执行（CI 一次性任务备选） | 已采纳 |
+| ADR-025 | 迁移在启动时加锁执行（CI 一次性任务备选） | 已采纳（执行器见 ADR-028） |
 | ADR-026 | 产品定位为工具类（作业收集/家校协作），砍掉一切 IM | 已采纳（2026-11-22 用户指令） |
 | ADR-027 | 一期不引入 Redis（MySQL 计数 + 进程内缓存） | 已采纳（Q24） |
+| ADR-028 | 迁移执行器：项目内置 runner，恢复版本化迁移 | 已采纳（2026-11-23 用户要求恢复迁移） |
 
 ---
 
@@ -66,7 +67,9 @@
 
 ---
 
-## ADR-003 迁移：golang-migrate
+## ADR-003 迁移：版本化 SQL（原 golang-migrate）
+
+> **2026-11-23 更新**：仍采用版本化迁移语义（up/down、版本表、只前进），但执行器改为项目内置 runner（见 ADR-028），不实际引入 `golang-migrate` 依赖；文件命名与行为保持兼容。
 
 **背景**：用户明确要求“数据库使用 migration 进行迁移”。
 
@@ -363,15 +366,15 @@
 
 ## ADR-023 数据库：统一 MySQL 8.0（本地容器 / 生产云托管）
 
-**背景**：云托管只提供 MySQL 5.7/8.0（Serverless），没有托管 PostgreSQL。用户确认 Q22 用 MySQL 容器起步，但云托管服务容器无持久盘，不能把 MySQL 跑在生产服务容器内。原数据模型按 PG 17 设计，但尚未写迁移代码。
+**背景**：云托管只提供 MySQL 5.7/8.0（Serverless），没有托管 PostgreSQL。用户确认 Q22 用 MySQL 容器起步，但云托管服务容器无持久盘，不能把 MySQL 跑在生产服务容器内。原数据模型按 PG 17 设计，但尚未写建表代码。
 
-**决定（2026-11-22 已确认）**：统一 MySQL 8.0。本地开发用 Docker Compose `mysql:8.0`；生产用云托管 MySQL 8.0；两套同一方言、同一套 `migrations/`，仅 `HM_DB_DSN` 不同。`data` 层 GORM + `mysql` 驱动，复杂 SQL 写原生；不用 PostgreSQL。
+**决定（2026-11-22 已确认）**：统一 MySQL 8.0。本地开发用 Docker Compose `mysql:8.0`；生产用云托管 MySQL 8.0；两套同一方言、同一套 `backend/migrations/*.sql`（版本化迁移，执行器见 ADR-028），仅 `HM_DB_DSN` 不同。`data` 层 GORM + `mysql` 驱动，复杂 SQL 写原生；不用 PostgreSQL。
 
 **理由**：满足“先起容器跑着”的开发诉求；生产数据不放在无持久盘的服务容器；托管库同账号/同网络、成本低；500 学员规模足够；MySQL 8.0 支持 CHECK（8.0.16+）、JSON、生成列。
 
 **影响**：MySQL 无部分唯一索引，预约冲突用生成列 + 唯一索引；无 `RETURNING`/`ON CONFLICT`/`JSONB`/`FILTER`；`lower_case_table_names` 建库前固定；Serverless 会自动暂停，需关闭或设最小 CCU；备份/慢日志需腾讯云侧配置；`utf8mb4` 必须显式设置。
 
-**回滚**：若选 MySQL 后发现限制，迁 PG 需改迁移与少量 SQL；保持 SQL 集中在 `data`、不在 biz 写方言，迁移成本可控。
+**回滚**：若选 MySQL 后发现限制，迁 PG 需改建表脚本与少量 SQL；保持 SQL 集中在 `data`、不在 biz 写方言，迁移成本可控。
 
 ---
 
@@ -393,7 +396,7 @@
 
 **背景**：云托管没有“发布前钩子”，但支持容器启动命令；多实例/滚动发布可能并发执行迁移。
 
-**决定**：镜像入口先跑 `hm-migrate up`，成功后再启动 `hm`；迁移进程用数据库锁（MySQL `GET_LOCK('hm_migrate',60)` / PG `pg_advisory_lock`），拿不到锁则等待/退出；失败 fail fast，不启动旧版本以外的半迁移状态。CI 可在部署前跑一次性迁移任务作为备选。
+**决定**：`hm` 启动时自动执行迁移（`data.Migrate`），也可在启动命令里显式跑 `./migrate up` 成功后再启动 `hm`；迁移用 MySQL `GET_LOCK('hm_migrate', 30)`，拿不到锁则等待/退出；失败 fail fast，不启动半迁移状态。CI 可在部署前跑一次性迁移任务作为备选。
 
 **理由**：简单、无需额外平台能力；锁避免并发 DDL；失败可见，便于回滚镜像。
 
@@ -433,3 +436,24 @@
 **影响**：多实例部署前必须补 Redis 或改为数据库共享状态；进程重启会丢失本地缓存与 WS 连接（客户端重连补拉）；限流精度低于 Redis。
 
 **回滚**：按 `cache.Store`/`ratelimit.Store` 接口切换 Redis 实现，配置打开即可，不改业务代码。
+
+---
+
+## ADR-028 迁移执行器：项目内置 runner（恢复版本化迁移）
+
+**背景**：项目曾短暂改为“预上线直接建表”（ADR-028 旧版）；2026-11-23 用户明确“不对不对，还是要迁移”，要求恢复版本化迁移。同时不想为一个执行器再引入 golang-migrate 依赖（下载、方言、多语句 SQL 解析都要额外验证）。
+
+**决定**：采用项目内置的轻量迁移执行器：
+- `backend/migrations/NNNN_<snake_case>.up.sql` / `.down.sql` 成对提供，`//go:embed` 打进二进制；
+- `data.Migrate` 在**同一 MySQL 连接**上 `GET_LOCK('hm_migrate', 30)`，读 `schema_migrations` 当前版本，按版本顺序执行未应用的 up，完成后释放锁；
+- `data.MigrateDown` 从高到低执行 down 并删除版本行；`cmd/migrate` 提供手工 `up` / `down -n` / `version`；
+- `cmd/hm` 启动时自动执行 up；失败 fail fast，不启动半迁移状态。
+
+**理由**：迁移文件本来就是多语句 SQL，复用已有 `splitSQL` 即可；不新增第三方依赖与下载；行为对使用者仍是标准版本化迁移（版本表、up/down、只前进）；实现小、可测（`loadMigrations`/`splitSQL` 单测）。
+
+**影响**：执行器需自己保证解析/顺序/锁/失败回滚语义；迁移文件命名必须严格成对；生产只前进，破坏性 down 需备份与人工确认；CI 必须在空库跑 `up → down → up`。将来若需要更复杂能力（out-of-order、强制版本、多数据库驱动），可替换为 golang-migrate，迁移文件格式保持兼容。
+
+**回滚**：保留迁移文件格式不变，直接换成 golang-migrate 的 embed 源即可；版本表结构兼容（version/name/applied_at）。
+
+
+

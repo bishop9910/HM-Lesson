@@ -1,4 +1,4 @@
--- 000001_init：账号、学员、家长绑定、文件与运维基础表（MySQL 8.0）
+﻿-- 000001_init：账号、学员、家长绑定、文件与运维基础表（MySQL 8.0）
 -- 约定：id=char(36) UUIDv7；时间 UTC datetime(3)；枚举 text + CHECK；表名全小写。
 
 CREATE TABLE staff (

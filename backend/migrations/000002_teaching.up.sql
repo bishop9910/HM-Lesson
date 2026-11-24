@@ -1,4 +1,4 @@
--- 000002_teaching：跟进、任务作业、预约、课时、班课、资料、通知（MySQL 8.0）
+﻿-- 000002_teaching：跟进、任务作业、预约、课时、班课、资料、通知（MySQL 8.0）
 
 CREATE TABLE follow_ups (
   id char(36) NOT NULL,

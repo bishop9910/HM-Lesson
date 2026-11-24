@@ -1,4 +1,4 @@
-# AGENTS.md · HM-Lesson 协作与工程规范
+﻿# AGENTS.md · HM-Lesson 协作与工程规范
 
 > 本文件是**所有 AI Agent 与人类协作者的强制约束**，优先级高于任何单次对话中的口头建议。
 > 违反本文件的操作视为错误交付，必须回滚并说明原因。
@@ -12,7 +12,7 @@
 
 **不再使用**：Debian 自建服务器、Docker Compose 生产部署、Caddy/Nginx 反向代理、自建 SeaweedFS/MinIO（生产）、服务器域名与域名 ICP 备案依赖（小程序侧；小程序备案已完成）。
 
-当前状态：**M1 骨架已落盘**。Kratos v3 已接入，`go build/vet/test` 与 `/healthz`、`/readyz` 已本地验证；`api/proto`、两份 MySQL 迁移、`frontend/apps/mp` 工程骨架已建立，前端依赖已安装并通过 `vue-tsc` 与 `mp-weixin` 构建。**尚未**实跑 MySQL 迁移、未连云托管 `dev`。不要假设任何业务接口、表数据、页面已完成。
+当前状态：**M1 骨架 + 多老师认证 + 版本化迁移已落盘（2026-11-23）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up；`go build/vet/test` 与 `/healthz`、`/readyz` 已本地验证；前端教师登录/成员管理页通过 `vue-tsc`，`mp-weixin` 构建成功。**尚未**连 MySQL 实跑迁移与登录、未连云托管 `dev`。不要假设任何业务接口、表数据、页面已完成。
 
 ## 1. 开始任何任务前
 
@@ -22,7 +22,7 @@
    - 不要猜产品规则；
    - 在实现中留出清晰的配置点/接口边界，并在回复中明确“阻塞于 Qx”；
    - 必要时先向用户提问，再继续。
-4. 已定结论（2026-11-18）：Q1=B 小程序教师模式；Q2=个人主体未认证（绑定走手机号+审批/绑定码，禁用 `getPhoneNumber`）；Q4=`github.com/bishop9910/hm-lesson`；Q5=多老师可扩、结构预留；Q6=Excel 导入；Q7=订阅消息+站内信；Q8=未到课不自动扣课时；Q9=提交即锁时段；Q10=wot-design-uni；Q12=青绿视觉；Q13=一期不做支付；Q14=导出 xlsx；Q16=Go 已装、Docker 在 Debian；Q17=GitHub Actions；Q18=一期不做暗色。
+4. 已定结论（2026-11-18）：Q1=B 小程序教师模式；Q2=个人主体未认证（绑定走手机号+审批/绑定码，禁用 `getPhoneNumber`）；Q4=`github.com/bishop9910/hm-lesson`；Q5=多老师可扩，支持同时多个老师；Q6=Excel 导入；Q7=订阅消息+站内信；Q8=未到课不自动扣课时；Q9=提交即锁时段；Q10=wot-design-uni；Q12=青绿视觉；Q13=一期不做支付；Q14=导出 xlsx；Q16=Go 已装、Docker 在 Debian；Q17=GitHub Actions；Q18=一期不做暗色。
 5. 2026-11-22 变更：Q15 由“Debian 单机 Compose”改为**微信云托管**；Q11 存储改为**云托管对象存储（COS/fileID）**，不再以 SeaweedFS 为生产默认；Q3 域名/备案对小程序侧**不再阻塞**（`callContainer`/`connectContainer` 不需要域名），仅在需要非小程序客户端时才涉及自定义域名。
 6. 已确认（2026-11-22 第二轮）：Q19=A（个人主体 + 工具类目先提审）、Q22=MySQL 8.0（本地容器/生产云托管）、Q23=生产 COS/本地 MinIO、Q24=一期不用 Redis、Q25=不绑自定义域名、Q26=AppID 不变更、Q27=GitHub Actions、Q28=A（功能范围全保留，IM 除外）。
 7. 用 `todo_write` 列出步骤；多步骤任务先给计划再动手。
@@ -46,7 +46,7 @@
 4. **禁止跳层**：Kratos 分层为 `api → service → biz → data`。`service` 不得直接 import `data`；`biz` 不得 import `transport`；`data` 不得依赖 `service`。
 5. **禁止手改生成物**：`*.pb.go`、`*.pb.validate.go`、`*_grpc.pb.go`、`*_http.pb.go`、OpenAPI 生成的前端类型。改 `.proto` 后重新生成。
 6. **禁止绕过权限**：任何按学员维度的查询，必须经统一的 `guardian scope` 校验；不得只在 handler 判断、不得信任前端传的 `student_id`。见 §7。
-7. **禁止无 down 的迁移**、禁止在生产库上执行破坏性 DDL（`DROP COLUMN`、改类型）而没有备份与用户确认。
+7. **禁止擅自改生产表结构**：所有表变更必须写成 `backend/migrations/NNNN_*.up.sql` + `.down.sql`（ADR-003）；改列/删列必须在空库验证，禁止在生产库执行破坏性 DDL 而没有备份与用户确认。
 8. **禁止 `any` / `@ts-ignore` / `//nolint` 滥用**：确需使用时必须写原因；`any` 在评审中视为缺陷。
 9. **禁止删除或改写用户数据语义**：退课=归档、流失=状态，不得物理删除学员/任务/流水。课时余额只能由流水推导。
 10. **禁止扩大范围**：不做需求文档“范围外”的功能（即时通讯/聊天/客服会话/群聊、支付、录播、助教子账号、短信、自动排课最优解），除非用户明确要求并更新文档。
@@ -68,7 +68,7 @@
 | 协议 | Protobuf + buf | buf 1.75+；`buf lint` + `buf breaking` |
 | 传输 | HTTP/JSON + WebSocket（小程序 `callContainer` / `connectContainer`）；gRPC 仅内部/工具 | 同一 proto 生成多套 |
 | 数据库 | **MySQL 8.0**：本地 Docker 容器 / 生产云托管 MySQL（Q22 已确认） | 见 §6.3 |
-| 迁移 | golang-migrate | SQL 文件，`migrations/`；启动时加锁执行 |
+| 建表 | `backend/migrations/*.up.sql` / `.down.sql`（embed） | 启动时 `GET_LOCK` 后按版本执行；`cmd/migrate` 手工 up/down/version |
 | ORM/驱动 | GORM v2 + `mysql` 驱动 | 复杂查询写原生 SQL |
 | 缓存/限流 | **一期不用 Redis**：MySQL 计数表 + 进程内 LRU（Q24） | — |
 | 对象存储 | **生产云托管 COS（fileID）；本地 MinIO 容器**（Q23 已确认） | — |
@@ -104,10 +104,9 @@ HM-Lesson/
 │   │   └── openapi/            # buf 生成，供前端出 TS 类型
 │   ├── gen/hm/v1/              # 生成物（禁止手改）
 │   ├── cmd/hm/                 # 单进程入口（api + 内嵌 job 调度）
-│   ├── cmd/migrate/            # 手动/CI 迁移入口
+│   ├── migrations/             # 版本化 SQL 迁移（embed，up/down）
 │   ├── internal/               # biz、data、service、server、conf
 │   ├── pkg/                    # authz、storage、wx、notify、xlsx、idgen、jobrunner
-│   ├── migrations/             # 000001_init.up.sql / .down.sql
 │   ├── Dockerfile              # 云托管构建用，单阶段/多阶段均可
 │   ├── buf.yaml / buf.gen.yaml
 │   ├── Makefile
@@ -149,7 +148,7 @@ HM-Lesson/
 
 ### 6.3 数据库
 
-- 迁移文件成对，命名 `0000NN_<snake_case>.{up,down}.sql`；一次迁移只做一件事。
+- 迁移脚本放 `backend/migrations/NNNN_<snake_case>.up.sql` 与 `.down.sql`，成对提供；用 `//go:embed` 打进二进制，由启动流程按版本执行（ADR-003）。
 - 每张表：`id` 主键（UUIDv7，`char(36)`）、`created_at`、`updated_at`、需要时 `deleted_at`（仅归档类实体）。时间统一 UTC。
 - 外键、唯一约束、CHECK 必须显式命名（`fk_`、`uq_`、`ck_`）。
 - 枚举用 `text/varchar + CHECK`，不用数据库原生 enum。
@@ -159,9 +158,9 @@ HM-Lesson/
   - 不支持 `RETURNING`、`ON CONFLICT`、`FILTER`、`ILIKE`、`JSONB`、`timestamptz`、`numeric[]`；用 `LAST_INSERT_ID()`、`ON DUPLICATE KEY`、`JSON`、`datetime(3)`；
   - `CHECK` 需 8.0.16+；`TEXT` 不能有默认值，需要默认值时用 `VARCHAR`。
 - 索引命名 `idx_<table>_<cols>`；“一个时段一个有效预约”必须有数据库级约束，不能只靠应用判断。
-- 迁移必须在**空库**与**有种子数据的库**上各跑一遍 up/down/up。
+- 迁移必须在**空库**上从零 up/down/up 验证；每次只前进，破坏性变更需备份与评审。
 - 禁止在迁移里写业务数据（种子放 `seeds/`，仅 dev）。
-- 启动迁移必须用数据库锁（MySQL `GET_LOCK('hm_migrate', 60)`）；部署前先备份。
+- 启动迁移必须用**同一连接**的 `GET_LOCK('hm_migrate', 30)`（`db.Connection`），按版本执行后释放；失败 fail fast。`cmd/migrate` 提供手工 up/down/version。
 
 ### 6.4 日志与可观测
 
@@ -183,7 +182,7 @@ HM-Lesson/
 - 上传：客户端直传对象存储；服务端校验扩展名白名单、MIME、大小、图片解码；对象键由服务端生成，禁止用用户文件名当路径。
 - 限流：登录/绑定/提交/预约按 openid + IP 双维度；无 Redis 时用 MySQL 计数表 + 进程内令牌桶，多实例前必须换 Redis。
 - 教师密码：**Argon2id**（不落明文、不可逆），参数随机器校准并在文档记录；连续失败 5 次锁定 15 分钟。
-- 教师账号：`staff.role ∈ {owner, assistant}`；一期只开放 `owner`，但成员表、角色校验必须按多老师实现（Q5：以后可扩）。`assistant` 即使创建也不得访问跟进、收费、课时调整、导出、成员管理。
+- 教师账号：`staff.role ∈ {owner, assistant}`；一期即支持多个老师同时使用，owner 可创建/停用成员，assistant 可登录并处理作业、预约、资料；`assistant` 不得访问跟进、收费、课时调整、导出、成员管理。
 - 家长绑定：**手机号 + 老师审批**（主）/ **绑定码**（辅）。因为个人主体不能用 `getPhoneNumber`，**禁止**实现手机号快速验证；绑定页由家长手动输入手机号。
 - 教师模式页面必须放 `pkg-teacher` 分包，家长端页面不得 import 教师模块；进入教师模式前服务端校验 `role`，前端只做展示层隐藏。
 - 小程序端禁止出现“管理端 Web”假设：所有教师操作必须在手机尺寸下可用（表格转卡片、批量操作用选择模式）。
@@ -194,7 +193,7 @@ HM-Lesson/
 | 层 | 要求 |
 | --- | --- |
 | 单元 | biz 状态机、课时计算、权限判定必须有表驱动测试；新增逻辑覆盖率不低于 70% |
-| 集成 | testcontainers 起 MySQL 8.0 + MinIO；repo 与事务测试；迁移测试 |
+| 集成 | testcontainers 起 MySQL 8.0 + MinIO；repo 与事务测试；空库迁移测试 |
 | 接口 | 每个 P0 RPC 至少 happy path + 一个权限/状态错误用例（httptest） |
 | 云托管契约 | `callContainer` 头解析、100 KiB/1000 KiB 边界、15 s 超时、fileID 上传下载、WS 首帧认证 |
 | E2E | 关键链路：绑定→看到任务→提交→批阅→家长可见；预约→审核→完成→扣课时 |
@@ -220,7 +219,7 @@ HM-Lesson/
 
 - 分支：`main` 保护；功能分支 `feat/<scope>-<slug>`，修复 `fix/<scope>-<slug>`。
 - 提交：Conventional Commits（`feat(booking): ...`），一次提交只做一件事；不提交格式化噪音。
-- PR：说明“做了什么/为什么/怎么验证/影响面/回滚方式”；涉及迁移、权限、计费、部署必须单独标注。
+- PR：说明“做了什么/为什么/怎么验证/影响面/回滚方式”；涉及建表/权限/计费/部署必须单独标注。
 - 不主动 commit/push，除非用户要求；需要时先 `git status` 确认变更范围。
 - 不修改与本任务无关的文件；发现无关问题记录到 issue/清单，不顺手改。
 
@@ -237,7 +236,7 @@ HM-Lesson/
 
 - [ ] 代码符合分层与命名规范，无 `any`/无跳层/无硬编码密钥
 - [ ] proto 已生成，`buf lint` 通过，前端类型已更新
-- [ ] 迁移成对且 up/down/up 通过（涉及 DB），MySQL 8.0 方言
+- [ ] 迁移成对且空库 up/down/up 通过，MySQL 8.0 方言；涉及 DB 的改动已验证
 - [ ] 单测 + 集成测试通过，新增逻辑有覆盖
 - [ ] 权限路径有显式测试（越权返回 404）
 - [ ] 前端三态齐全，构建通过，主包/分包体积未超限
@@ -259,6 +258,9 @@ HM-Lesson/
 | Q19 | 上线类目与主体路径 | **A：个人主体 + 工具类目先提审**；先去云托管控制台确认能否开通，被拒再变更 |
 | Q21 | 教师模式页面范围（是否接受手机批阅/看板） | 交互取舍 | 默认按前端文档实现，可再调 |
 
-已关闭：Q1（小程序教师模式）、Q2（按无手机号组件设计）、Q3（小程序侧不需要服务器域名/域名 ICP 备案；**小程序备案已于 2026-11-22 确认完成**，域名未做 ICP 备案也不影响上线）、Q4（module 路径）、Q5（多老师预留）、Q6（Excel 导入）、Q7、Q8、Q9、Q10、Q11（改为云存储）、Q12、Q13、Q14、Q15（改为云托管）、Q16、Q17、Q18、Q20（生产不再用 SeaweedFS 预签名）。
+已关闭：Q1（小程序教师模式）、Q2（按无手机号组件设计）、Q3（小程序侧不需要服务器域名/域名 ICP 备案；**小程序备案已于 2026-11-22 确认完成**，域名未做 ICP 备案也不影响上线）、Q4（module 路径）、Q5（多老师可同时使用）、Q6（Excel 导入）、Q7、Q8、Q9、Q10、Q11（改为云存储）、Q12、Q13、Q14、Q15（改为云托管）、Q16、Q17、Q18、Q20（生产不再用 SeaweedFS 预签名）。
 
 其余见 [`docs/open-questions.md`](docs/open-questions.md)。
+
+
+

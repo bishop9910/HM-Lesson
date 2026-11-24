@@ -1,4 +1,4 @@
--- 000002_teaching down：按外键逆序删除
+﻿-- 000002_teaching down：按外键逆序删除
 DROP TABLE IF EXISTS notice_receipts;
 DROP TABLE IF EXISTS notices;
 DROP TABLE IF EXISTS materials;

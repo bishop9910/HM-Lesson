@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { onLoad } from "@dcloudio/uni-app";
+import { ApiError, request } from "@/utils/request";
 import { useSessionStore } from "@/stores/session";
 
 const session = useSessionStore();
 
-onLoad(() => {
+onLoad(async () => {
   if (!session.isTeacher) {
-    uni.reLaunch({ url: "/pages/index/index" });
+    uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
+    return;
+  }
+  try {
+    await request("/api/v1/auth/me", "GET");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      session.clear();
+      uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
+    }
   }
 });
 
@@ -16,7 +26,12 @@ const todos = [
   { title: "课时不足提醒", value: "1", hint: "余额 ≤ 2 课时" },
 ];
 
-function back(): void {
+function goStaff(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/staff/index" });
+}
+
+function logout(): void {
+  session.clear();
   uni.reLaunch({ url: "/pages/index/index" });
 }
 </script>
@@ -36,8 +51,9 @@ function back(): void {
       <text class="row-value">{{ item.value }}</text>
     </view>
 
-    <button class="ghost" @click="back">返回家长端</button>
-    <text class="footnote">M1 骨架：教师分包已建立，批阅/审核页面按 M2 接入。</text>
+    <button v-if="session.isOwner" class="primary" @click="goStaff">成员管理</button>
+    <button class="ghost" @click="logout">退出登录</button>
+    <text class="footnote">M1 骨架：批阅/审核页面按 M2 接入；账号与成员管理已接通。</text>
   </view>
 </template>
 
@@ -100,6 +116,7 @@ function back(): void {
   color: $hm-accent;
 }
 
+.primary,
 .ghost {
   margin-top: 40rpx;
   height: 88rpx;
@@ -108,6 +125,13 @@ function back(): void {
   background: $hm-surface;
   border: 1rpx solid $hm-border;
   color: $hm-text;
+}
+
+.primary {
+  margin-top: 20rpx;
+  background: $hm-primary;
+  border-color: $hm-primary;
+  color: #ffffff;
 }
 
 .footnote {

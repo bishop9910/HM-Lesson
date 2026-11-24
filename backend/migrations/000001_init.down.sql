@@ -1,4 +1,4 @@
--- 000001_init down：按外键逆序删除
+﻿-- 000001_init down：按外键逆序删除
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS token_denylist;
 DROP TABLE IF EXISTS idempotency_keys;

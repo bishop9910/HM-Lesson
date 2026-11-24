@@ -23,8 +23,16 @@
       "root": "pkg-teacher",
       "pages": [
         {
+          "path": "pages/login/index",
+          "style": { "navigationBarTitleText": "教师登录" }
+        },
+        {
           "path": "pages/workbench/index",
           "style": { "navigationBarTitleText": "教师工作台" }
+        },
+        {
+          "path": "pages/staff/index",
+          "style": { "navigationBarTitleText": "成员管理" }
         }
       ]
     }

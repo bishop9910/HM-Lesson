@@ -1,4 +1,4 @@
-# 微信云托管部署手册 · HM-Lesson
+﻿# 微信云托管部署手册 · HM-Lesson
 
 > 适用：本项目从「Debian + Docker Compose + Caddy」迁移到**微信云托管**。
 > 最后更新：2026-11-22。控制台菜单与 CLI 参数会随平台更新，**以控制台实际生成的命令为准**；本文不写死未验证的 flag。
@@ -52,7 +52,7 @@
 - **一个服务**同时提供 HTTP 与 WebSocket；不拆 `api` / `job` 两个容器。
 - MVP `min=max=1`：避免定时任务多实例重复、避免冷启动；后续要扩再引 Redis 锁与独立调度。
 - **生产关闭“公网访问”**，只允许小程序/公众号调用。
-- CI 构建镜像 → 推送 TCR → 云托管拉取运行；容器启动只做“迁移 + 起服务”。
+- CI 构建镜像 → 推送 TCR → 云托管拉取运行；容器启动只做“建表 + 起服务”。
 
 ---
 
@@ -118,7 +118,7 @@ volumes:
 
 - 本机没有 Docker 时，这一步在 Debian/CI 上跑；不要在 Windows 本地装 Docker（Q16）。
 - 本地连接串：`hm:hm_dev_password@tcp(127.0.0.1:3306)/hm_lesson?charset=utf8mb4&parseTime=true&loc=UTC`。
-- 迁移与生产共用同一套 `migrations/`，不维护两套 SQL。
+- 建表与生产共用同一套 `backend/migrations/*.sql`，不维护两套 SQL。
 
 ### 4.2 生产：云托管 MySQL 8.0
 
@@ -188,7 +188,7 @@ const res = await wx.cloud.uploadFile({
 | --- | --- | --- |
 | `HM_ENV` | `prod` | 环境标识 |
 | `HM_HTTP_ADDR` | `0.0.0.0:80` | 云托管要求容器监听 80 |
-| `HM_DB_DRIVER` | `mysql` / `postgres` | 与 Q22 一致 |
+| `HM_DB_DRIVER` | `mysql` | Q22 已固定 MySQL 8.0 |
 | `HM_DB_DSN` | 见 §4 | 含密码，敏感 |
 | `HM_JWT_SECRET` | 随机 32+ 字节 | 家长/教师 token 签名 |
 | `HM_WX_APP_ID` | `wx...` | 小程序 AppID |
@@ -200,6 +200,9 @@ const res = await wx.cloud.uploadFile({
 | `HM_REDIS_ADDR` | 空或内网地址 | 不用 Redis 时留空 |
 | `HM_LOG_LEVEL` | `info` | `debug` 仅联调 |
 | `HM_TIMEZONE` | `Asia/Shanghai` | 展示时区；存库仍 UTC |
+| `HM_BOOTSTRAP_NAME` | `鹤鸣老师` | 首次启动创建 owner 用；创建后删除 |
+| `HM_BOOTSTRAP_PHONE` | `138...` | 首个 owner 手机号；创建后删除 |
+| `HM_BOOTSTRAP_PASSWORD` | 强密码 | 首个 owner 密码（≥8）；创建后删除并改密 |
 
 > 云托管模板可能自动注入 `CBR_ENV_ID`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_ADDRESS`。可以复用，但业务配置要显式映射，禁止在代码里散落读取。
 
@@ -207,28 +210,30 @@ const res = await wx.cloud.uploadFile({
 
 ## 8. 数据库迁移
 
-### 8.1 推荐：启动时执行（单实例）
+### 8.1 启动时自动执行
 
-容器启动命令：
+容器启动命令就是启动服务：
 
 ```bash
-./hm-migrate up && ./hm
+./hm
 ```
 
-- 迁移前先取数据库锁：MySQL `SELECT GET_LOCK('hm_migrate', 60)`（已写入 `cmd/migrate` 的实现约定）。
-- 拿不到锁就退出并让云托管重试；不要并发执行。
-- 迁移失败**不要起服务**（fail fast），避免旧代码配新表/新代码配旧表。
-- 发布前备份；破坏性 DDL 必须单独评审。
+- 启动时 `data.Migrate` 在**同一 MySQL 连接**上取 `SELECT GET_LOCK('hm_migrate', 30)`，按文件名执行 `migrations/*.sql`（全部 成对 up/down），完成后释放锁。
+- 拿不到锁则失败退出，让云托管重试；不要多个实例并发执行。
+- 建表失败**不要起服务**（fail fast）；`/readyz` 会返回非 200。
+- 预上线没有历史数据，可直接删库重建；发布前仍建议备份。
 
-### 8.2 备选：CI 一次性任务
+### 8.2 修改表结构
 
-- 在部署流水线里先跑迁移镜像/任务，成功后再发布新版本。
-- 适合多人协作与多环境；需要把数据库网络对 CI 开放（不推荐公网），或跑在云托管内的一次性任务里。
+- 新增表：追加 `migrations/NNNN_*.sql`，重启后自动创建。
+- 改列/加索引：新建迁移版本（up/down），启动时按版本执行；破坏性 DDL 必须备份并单独评审。
+- 上线并产生真实数据后：以当前迁移为基线引入版本化迁移（新 ADR），不再直接改表。
 
-### 8.3 版本校验
+### 8.3 首个 owner 与健康检查
 
-- 服务启动读取 `schema_migrations`，低于代码要求则拒绝启动并打印待执行版本。
-- 健康检查 `/healthz` 不查库；`/readyz` 查库与存储，用于发布后验证。
+- 首次启动可用 `HM_BOOTSTRAP_NAME/PHONE/PASSWORD` 创建第一个 owner（仅当库中无老师）；创建后删除该环境变量并改密。
+- 其余老师由 owner 在小程序“成员管理”中创建，不需要 CLI。
+- 健康检查 `/healthz` 不查库；`/readyz` 查库，用于发布后验证。
 
 ---
 
@@ -237,13 +242,13 @@ const res = await wx.cloud.uploadFile({
 1. 本地构建镜像，确认 `docker build` 通过（本机无 Docker 时在 Debian/CI 构建）。
 2. 推送镜像到 TCR（上海）。
 3. 云托管 → 服务 `hm-api` → 新建版本：选镜像、端口 80、实例 1/1、环境变量、健康检查 `/healthz`。
-4. 部署后看日志：应打印监听端口、DB 连接、迁移版本、实际微信 header 名。
+4. 部署后看日志：应打印监听端口、DB 连接、迁移执行结果、实际微信 header 名。
 5. 用云托管“调试/公网访问”临时验证：
    - `GET /healthz` → 200
    - `GET /readyz` → 200
    - `GET /api/v1/meta`（若有）→ 版本信息
 6. 关闭公网访问，改用小程序 `callContainer` 联调。
-7. 首次管理员账号：通过一次性 CLI/种子创建，**不要**在公网暴露初始化接口；创建后立即改密。
+7. 首次管理员账号：用 `HM_BOOTSTRAP_*` 环境变量在启动时创建 owner（仅库中无老师时），**不要**在公网暴露初始化接口；创建后删除变量并改密。
 
 ---
 
@@ -280,7 +285,7 @@ push main
 ### 10.3 回滚
 
 - 云托管保留历史版本：控制台回滚到上一版本即可。
-- 数据库迁移**不自动回滚**：破坏性变更必须向前兼容（先加列、后删列，分两次发布）。
+- 数据库结构变更**不自动回滚**：破坏性变更必须向前兼容（先加列、后删列，分两次发布）；预上线可直接删库重建。
 - 回滚前确认新版本没有写入旧代码不认识的数据。
 
 ---
@@ -442,7 +447,7 @@ await api.submitHomework({ taskId, text, fileIDs: [fileID] })
 | `CynosDB ... resuming` | Serverless 冷启动 | 重试 + 关闭自动暂停 |
 | 上传 403 | fileID 不属于当前用户 / 桶权限 | 服务端校验归属；私有读配置 |
 | WS 连不上 | 基础库低 / 公网关闭后仍用公网地址 | 升基础库；改用 `connectContainer` |
-| 迁移锁等待 | 多实例同时启动 | 确认 `min=max=1`；检查锁超时 |
+| 建表锁等待 | 多实例同时启动 | 确认 `min=max=1`；检查 `hm_migrate` 锁超时 |
 | 定时任务不跑 | 实例缩容到 0 / cron 配错 | 最小实例 1；核对时区 |
 
 ---
@@ -451,7 +456,7 @@ await api.submitHomework({ taskId, text, fileIDs: [fileID] })
 
 1. 回复 Q19/Q22/Q26：主体、数据库、AppID 时点。
 2. 创建云托管环境与服务；打通数据库；开通 COS。
-3. 部署最小版本：`/healthz`、`/readyz`、迁移、日志。
+3. 部署最小版本：`/healthz`、`/readyz`、迁移执行、日志。
 4. 小程序接 `callContainer` 跑通登录/绑定。
 5. 按 M1→M6 交付业务；每个里程碑在云托管 dev 环境验收。
 6. 关闭公网访问；配置告警、备份、预算。
@@ -472,3 +477,7 @@ await api.submitHomework({ taskId, text, fileIDs: [fileID] })
 | Q26 | AppID | **不变更**；直接建生产环境 |
 | Q27 | CI | **控制台持续集成**起步；Actions 后续加门禁 |
 | Q28 | 功能范围 | 作业 + 预约 + 课时 + 资料 + 通知 + 看板全保留；IM 不做 |
+
+
+
+
