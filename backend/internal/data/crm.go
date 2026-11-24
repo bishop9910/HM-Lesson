@@ -220,7 +220,13 @@ func (r *crmRepo) ListPendingGuardians(ctx context.Context) ([]biz.GuardianReque
 		CreatedAt time.Time
 	}
 	err := r.db.WithContext(ctx).
-		Raw(`SELECT id,phone,name,status,created_at FROM guardians WHERE status = 'pending' ORDER BY created_at ASC`).
+		Raw(`SELECT g.id,g.phone,g.name,g.status,g.created_at
+		     FROM guardians g
+		     WHERE g.status = 'pending'
+		        OR (g.status = 'active' AND NOT EXISTS (
+		              SELECT 1 FROM student_guardians sg WHERE sg.guardian_id = g.id
+		            ))
+		     ORDER BY g.created_at ASC`).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -243,7 +249,10 @@ func (r *crmRepo) ApproveGuardian(ctx context.Context, guardianID, studentID, ac
 		}
 		res := tx.Exec(
 			`UPDATE guardians SET status='active', approved_by=?, approved_at=NOW(3), bound_at=NOW(3), rejected_reason=NULL
-			 WHERE id=? AND status='pending'`, actorID, guardianID)
+			 WHERE id=?
+			   AND (status='pending' OR (status='active' AND NOT EXISTS (
+			         SELECT 1 FROM student_guardians sg WHERE sg.guardian_id = guardians.id
+			       )))`, actorID, guardianID)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -259,7 +268,10 @@ func (r *crmRepo) ApproveGuardian(ctx context.Context, guardianID, studentID, ac
 func (r *crmRepo) RejectGuardian(ctx context.Context, guardianID, reason, actorID string) error {
 	res := r.db.WithContext(ctx).Exec(
 		`UPDATE guardians SET status='rejected', rejected_reason=?, approved_by=?, approved_at=NOW(3)
-		 WHERE id=? AND status='pending'`, reason, actorID, guardianID)
+		 WHERE id=?
+		   AND (status='pending' OR (status='active' AND NOT EXISTS (
+		         SELECT 1 FROM student_guardians sg WHERE sg.guardian_id = guardians.id
+		       )))`, reason, actorID, guardianID)
 	if res.Error != nil {
 		return res.Error
 	}

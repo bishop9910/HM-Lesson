@@ -1,6 +1,6 @@
 # 测试报告 · HM-Lesson
 
-> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请、M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/家长端学员详情/Excel 导入，以及 M3 任务/提交/批阅/打回/模板/家长任务与档案接口；前端完成教师学员/跟进/审批/导入/任务/批阅页与家长登录/门户/任务/档案页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查、owner 登录、dashboard、学员档案编辑、家长端学员详情与 Excel 全链路**。M3 已部署：模板 CRUD、任务/待批阅只读接口与错误路径已在公网实测；M3 全链路（建任务→发布→提交→批阅）因生产无学员、无删除接口，尚未造数实测。没有真实执行过的测试不得写“通过”。
+> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请、M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/家长端学员详情/Excel 导入，以及 M3 任务/提交/批阅/打回/模板/家长任务与档案接口；前端完成教师学员/跟进/审批/导入/任务/批阅页与家长登录/门户/任务/档案页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查、owner 登录、dashboard、学员档案编辑、家长端学员详情与 Excel 全链路**。M3 已部署：模板 CRUD、任务/待批阅只读接口与错误路径已在公网实测；2026-11-24 用用户创建的 test 学员实测绑定码、家长门户、任务发布，家长任务列表暴露 D-09（`student_guardians` 无 status 列，已修复待部署）。M3 全链路（提交→打回→重交→批阅）待部署后继续。没有真实执行过的测试不得写“通过”。
 > 维护：每完成一个里程碑追加一轮记录；没有真实执行过的测试不得写“通过”。
 
 ## 1. 环境
@@ -55,6 +55,10 @@
 | 2026-11-24 | M3 任务模板迁移 | `go test ./internal/data -count=1` | **通过** | 新增 `000004_task_templates.up/down.sql`；`TestLoadMigrations` 期望 4 个版本 |
 | 2026-11-24 | M3 前端 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 新增教师任务/详情/待批阅、家长任务/详情/档案、模板选择；产物 261,425 字节 / 81 文件；仅 Sass 告警 |
 | 2026-11-24 | 教师工作台 UI 重做 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 工作台改为 2 列按钮组（主操作通栏 + 4 个快捷入口 + 退出），统计改 2×2 卡片；产物 264,431 字节 / 81 文件 |
+| 2026-11-24 | 首页/工作台视觉重做 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 首页/工作台统一纸张台账主题；首页按钮两列铺满再换行；工作台无 `gap` 两列布局；入口改为 `pages/home/index` 以避开旧 WXML/JS 缓存；编译后 app.json 首屏为新路径，WXML 无原始值；产物 268,563 字节 / 81 文件 |
+| 2026-11-24 | 弹层表单挤压修复 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 学员/任务/批阅四个底部弹层改为纸面主题、`max-height:88vh` + 滚动、输入框固定 88rpx 行高、字段间距统一；`$hm-bg/$hm-surface/$hm-text/$hm-border` 全站切换为纸面令牌；产物 271,395 字节 / 81 文件；未做真机视觉验收 |
+| 2026-11-24 | 生产家长绑定码 + 门户 | 生成 6 位码 → 家长手机号+码登录 → `/portal/home` → `/portal/students/{id}` | **通过** | 家长 `13000000000` 原为 active 未关联学员；绑定码 `024961` 兑换后自动建立 `student_guardians`，门户返回学员 test、余额 0、作业/流水空；详情不含 `note/tags`（D-05 已上线） |
+| 2026-11-24 | 生产 M3 发布 + 家长任务 | 教师建任务 → 发布 → `GET /portal/tasks` | **失败** | 发布返回 `assigned:1`；家长任务列表 500 `{"message":"任务操作失败","reason":"INTERNAL"}`；根因 `student_guardians` 无 `status` 列，见 D-09；教师任务详情/统计正常 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |
 
@@ -94,9 +98,12 @@
 | D-02 | `uni build -p mp-weixin` 报 `Rollup failed to resolve import "nostics" from pinia` | 中 | 已修复 | pinia 4.1.0 的传递依赖在 pnpm 符号链接布局下未被 Rollup 解析；将 `nostics@1.4.0` 加为小程序直接依赖并补 `pnpm-lock.yaml`；本地已用 Junction 验证构建，正式链接需在 `frontend/` 跑一次 `pnpm install` |
 | D-03 | Sass 报 `@import` 与 legacy JS API 弃用 | 低 | 待处理 | 迁移到 `@use` 需改 tokens 与各页面引用；不影响构建，排入 M2 |
 | D-04 | 公网 `GET /api/v1/dashboard/summary` 返回 500 | 高 | 已修复并复测 | 查询误用 `submissions.status`（`submissions` 无 status 列），改为 `task_assignments.status='submitted'`；2026-11-24 19:55 公网复测 200 |
-| D-05 | 家长端复用教师 DTO，泄露 `note/tags/next_follow_up_at` | 高 | 已修复，待部署 | 新增 `portalStudentDTO`，只返回 id/姓名/年级/学校/分组/状态 |
+| D-05 | 家长端复用教师 DTO，泄露 `note/tags/next_follow_up_at` | 高 | 已修复并线上复测 | 新增 `portalStudentDTO`，只返回 id/姓名/年级/学校/分组/状态；2026-11-24 生产 `/portal/students/{id}` 已确认不含这些字段 |
 | D-06 | 无 token 请求返回 401 JSON 后又追加 500 JSON | 高 | 已修复，待部署 | `fail()` 写响应后返回 sentinel error，并配置 `khttp.ErrorEncoder` 识别 `X-HM-Handled`，避免 Kratos 二次编码 |
 | D-07 | `PATCH /task-templates/{id}` 返回 `created_by=""`、`created_at` 为零值 | 中 | 已修复，待部署 | 更新后重新 SELECT 整行回填 |
+| D-08 | 新增学员/新建任务/批阅弹层顶部字段被裁切、字段拥挤，弹层主题与首页不一致 | 高 | 已修复，待真机验收 | 弹层未限制高度且无滚动，内容超出视口；输入框未设固定高度导致原生 placeholder 纵向裁切。四个弹层统一 `max-height:88vh + overflow-y:auto`、输入框 `height:88rpx/line-height:88rpx`、字段间距 20rpx；纸张令牌全站生效 |
+| D-09 | 生产 `GET /api/v1/portal/tasks` 500 `任务操作失败` | 高 | 已修复，待部署 | `internal/data/task.go` 的家长任务/提交查询误用 `student_guardians.status`（该表无 status 列），改为只校验 `guardians.status='active'`；`portalAssignments` 与 `Submit` 两处均已修 |
+| D-10 | 家长提交绑定申请后直接 active、未关联学员，待审批列表看不到，无法审批 | 高 | 已修复，待部署 | `ListPendingGuardians`/`ApproveGuardian`/`RejectGuardian` 只查 `status='pending'`；改为同时接受 `active && NOT EXISTS(student_guardians)`，老师可把未绑定的 active 家长分配到学员 |
 
 
 

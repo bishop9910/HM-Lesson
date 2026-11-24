@@ -59,11 +59,11 @@ onShow(() => {
 function logout(): void {
   uni.removeStorageSync("hm_guardian_token");
   uni.removeStorageSync("hm_guardian_phone");
-  uni.reLaunch({ url: "/pages/index/index" });
+  uni.reLaunch({ url: "/pages/home/index" });
 }
 
 function goHome(): void {
-  uni.reLaunch({ url: "/pages/index/index" });
+  uni.reLaunch({ url: "/pages/home/index" });
 }
 
 function openStudent(id: string): void {

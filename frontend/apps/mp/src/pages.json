@@ -7,7 +7,7 @@
   },
   "pages": [
     {
-      "path": "pages/index/index",
+      "path": "pages/home/index",
       "style": {
         "navigationBarTitleText": "鹤鸣作业本",
         "navigationStyle": "custom"
@@ -91,7 +91,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarBackgroundColor": "#F0FDFA",
-    "backgroundColor": "#F8FAFC"
+    "navigationBarBackgroundColor": "#F5EFE2",
+    "backgroundColor": "#F5EFE2"
   }
 }

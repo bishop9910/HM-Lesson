@@ -211,7 +211,7 @@ onLoad((options) => {
 <style lang="scss">
 @import "@/styles/tokens.scss";
 .page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx 60rpx; }
-.card { background: #fff; border-radius: $hm-radius; padding: 26rpx; margin-bottom: 20rpx; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 26rpx; margin-bottom: 20rpx; }
 .row { display: flex; justify-content: space-between; gap: 14rpx; }
 .title { font-size: 32rpx; font-weight: 700; flex: 1; }
 .badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: #f1f5f9; color: $hm-muted; }

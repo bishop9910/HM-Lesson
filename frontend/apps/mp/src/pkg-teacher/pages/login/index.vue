@@ -38,7 +38,7 @@ async function submit(): Promise<void> {
 }
 
 function back(): void {
-  uni.reLaunch({ url: "/pages/index/index" });
+  uni.reLaunch({ url: "/pages/home/index" });
 }
 </script>
 

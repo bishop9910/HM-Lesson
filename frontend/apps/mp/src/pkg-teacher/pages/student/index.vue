@@ -550,44 +550,66 @@ function goBack(): void {
 
 .sheet {
   width: 100%;
-  padding: 32rpx $hm-space calc(32rpx + env(safe-area-inset-bottom));
+  max-height: 88vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 30rpx $hm-space calc(30rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  border-radius: 32rpx 32rpx 0 0;
-  background: $hm-surface;
+  border-radius: 28rpx 28rpx 0 0;
+  background: $hm-paper;
 }
 
 .sheet-title {
   display: block;
-  margin-bottom: 16rpx;
-  font-size: 32rpx;
+  margin-bottom: 24rpx;
+  font-family: $hm-serif;
+  font-size: 34rpx;
   font-weight: 700;
+  color: $hm-ink;
 }
 
 .field,
-.textarea,
-.field-row {
+.textarea {
+  display: block;
   width: 100%;
-  margin-top: 16rpx;
-  padding: 20rpx 24rpx;
+  margin-top: 20rpx;
   box-sizing: border-box;
-  border-radius: $hm-radius;
-  border: 1rpx solid $hm-border;
-  background: $hm-bg;
+  border-radius: 10rpx;
+  border: 1rpx solid $hm-rule;
+  background: rgba(255, 255, 255, 0.55);
+  color: $hm-ink;
   font-size: 28rpx;
 }
 
+.field {
+  height: 88rpx;
+  padding: 0 24rpx;
+  line-height: 88rpx;
+}
+
 .textarea {
-  height: 160rpx;
+  height: 180rpx;
+  padding: 20rpx 24rpx;
+  line-height: 1.6;
 }
 
 .field-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 20rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border-radius: 10rpx;
+  border: 1rpx solid $hm-rule;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 28rpx;
 }
 
 .field-label {
-  color: $hm-muted;
+  color: rgba(34, 48, 42, 0.55);
 }
 
 .picker {
@@ -596,11 +618,11 @@ function goBack(): void {
 
 .primary {
   height: 88rpx;
-  margin-top: 20rpx;
+  margin-top: 24rpx;
   line-height: 88rpx;
-  border-radius: 44rpx;
+  border-radius: 10rpx;
   font-size: 28rpx;
-  background: $hm-primary;
-  color: #fff;
+  background: $hm-primary-strong;
+  color: #f7f3e8;
 }
 </style>

@@ -233,12 +233,12 @@ onLoad((options) => {
 <style lang="scss">
 @import "@/styles/tokens.scss";
 .page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx 60rpx; }
-.card { background: #fff; border-radius: $hm-radius; padding: 26rpx; margin-bottom: 20rpx; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 26rpx; margin-bottom: 20rpx; }
 .row { display: flex; justify-content: space-between; gap: 16rpx; align-items: center; }
 .title { font-size: 32rpx; font-weight: 700; color: $hm-text; flex: 1; }
-.badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: #f1f5f9; color: $hm-muted; }
+.badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: rgba(34, 48, 42, 0.07); color: $hm-muted; }
 .badge.submitted { background: #fef3c7; color: #92400e; }
-.badge.reviewed { background: #ccfbf1; color: #115e59; }
+.badge.reviewed { background: #d9ece4; color: #115e59; }
 .badge.returned { background: #fee2e2; color: #991b1b; }
 .meta { display: flex; gap: 18rpx; flex-wrap: wrap; color: $hm-muted; font-size: 23rpx; margin-top: 10rpx; }
 .desc { display: block; color: #334155; font-size: 25rpx; line-height: 1.7; margin-top: 14rpx; white-space: pre-wrap; }
@@ -249,13 +249,13 @@ onLoad((options) => {
 .stat.danger .num { color: $hm-danger; }
 .bar { height: 8rpx; background: #e2e8f0; border-radius: 999rpx; margin-top: 18rpx; overflow: hidden; }
 .bar-in { height: 100%; background: $hm-primary; }
-.ghost { background: #fff; color: $hm-primary; border: 1rpx solid $hm-border; border-radius: 16rpx; font-size: 25rpx; }
+.ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 25rpx; }
 .primary { background: $hm-primary; color: #fff; border-radius: 16rpx; font-size: 25rpx; }
 .close { margin-top: 18rpx; font-size: 24rpx; }
 .section-head { display: flex; justify-content: space-between; margin: 10rpx 0 16rpx; font-size: 27rpx; font-weight: 600; }
 .sub { color: $hm-muted; font-size: 23rpx; font-weight: 400; }
 .name { font-size: 28rpx; font-weight: 600; }
-.submission { margin-top: 14rpx; background: #f8fafc; border-radius: 14rpx; padding: 18rpx; }
+.submission { margin-top: 14rpx; background: rgba(255, 255, 255, 0.45); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 18rpx; }
 .text { font-size: 25rpx; line-height: 1.7; color: #334155; white-space: pre-wrap; }
 .images { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 12rpx; }
 .thumb { width: 150rpx; height: 150rpx; border-radius: 10rpx; }
@@ -266,13 +266,16 @@ onLoad((options) => {
 .hint { color: $hm-muted; text-align: center; padding: 40rpx 0; }
 .hint.error { color: $hm-danger; }
 .mask { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: flex-end; z-index: 20; }
-.sheet { width: 100%; background: #fff; border-radius: 32rpx 32rpx 0 0; padding: 30rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); box-sizing: border-box; }
-.sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18rpx; }
-.sheet-title { font-size: 30rpx; font-weight: 700; }
-.quote { background: #f8fafc; border-radius: 14rpx; padding: 18rpx; color: #334155; font-size: 24rpx; margin-bottom: 16rpx; max-height: 180rpx; overflow: auto; }
-.field { width: 100%; box-sizing: border-box; background: #f8fafc; border-radius: 14rpx; padding: 20rpx; font-size: 26rpx; margin-bottom: 14rpx; }
-.area { height: 120rpx; }
-.field.danger { border: 1rpx solid #fecaca; }
-.actions { display: flex; gap: 16rpx; margin-top: 10rpx; }
+.sheet { width: 100%; max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch; background: $hm-paper; border-radius: 28rpx 28rpx 0 0; padding: 30rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); box-sizing: border-box; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22rpx; }
+.sheet-title { font-family: $hm-serif; font-size: 32rpx; font-weight: 700; color: $hm-ink; }
+.close, .link { color: $hm-primary-strong; font-size: 25rpx; }
+.quote { background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 20rpx; color: $hm-ink; font-size: 25rpx; line-height: 1.7; margin-bottom: 18rpx; max-height: 200rpx; overflow: auto; }
+.field { display: block; width: 100%; height: 88rpx; padding: 0 22rpx; line-height: 88rpx; box-sizing: border-box; background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 27rpx; color: $hm-ink; margin-bottom: 16rpx; }
+.area { height: 160rpx; padding: 20rpx 22rpx; line-height: 1.6; }
+.field.danger { border-color: #e7b4a8; }
+.actions { display: flex; gap: 16rpx; margin-top: 12rpx; }
 .actions button { flex: 1; }
+.actions .primary { background: $hm-primary-strong; color: #f7f3e8; }
+.actions .ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; }
 </style>

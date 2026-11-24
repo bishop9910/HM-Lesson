@@ -77,7 +77,7 @@ onShow(load);
 .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20rpx; }
 .title { font-size: 34rpx; font-weight: 700; }
 .sub { color: $hm-muted; font-size: 23rpx; }
-.card { background: #fff; border-radius: $hm-radius; padding: 24rpx; margin-bottom: 18rpx; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 24rpx; margin-bottom: 18rpx; }
 .row { display: flex; justify-content: space-between; gap: 16rpx; }
 .name { font-size: 28rpx; font-weight: 600; flex: 1; }
 .score { color: $hm-accent; font-weight: 700; font-size: 26rpx; }
@@ -85,7 +85,7 @@ onShow(load);
 .comment { display: block; color: #334155; font-size: 24rpx; line-height: 1.6; margin-top: 10rpx; max-height: 96rpx; overflow: hidden; }
 .hint { color: $hm-muted; text-align: center; padding: 40rpx 0; }
 .hint.error { color: $hm-danger; }
-.empty { background: #fff; border-radius: $hm-radius; padding: 60rpx 30rpx; text-align: center; }
+.empty { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 60rpx 30rpx; text-align: center; }
 .empty-title { display: block; font-size: 28rpx; font-weight: 600; }
 .empty-sub { display: block; color: $hm-muted; font-size: 24rpx; margin-top: 10rpx; }
 </style>

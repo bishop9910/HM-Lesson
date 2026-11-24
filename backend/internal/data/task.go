@@ -301,7 +301,7 @@ WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, ass
 }
 
 func (r *TaskRepo) portalAssignments(ctx context.Context, guardianID, extra string, args ...any) ([]biz.TaskAssignment, error) {
-	where := ` WHERE sg.guardian_id=? AND sg.status='active' AND g.status='active'`
+	where := ` WHERE sg.guardian_id=? AND g.status='active'`
 	baseArgs := []any{guardianID}
 	if extra != "" {
 		where += " AND " + extra
@@ -387,7 +387,7 @@ SELECT a.status,t.due_at FROM task_assignments a
 JOIN tasks t ON t.id=a.task_id
 JOIN student_guardians sg ON sg.student_id=a.student_id
 JOIN guardians g ON g.id=sg.guardian_id
-WHERE a.id=? AND sg.guardian_id=? AND sg.status='active' AND g.status='active'
+WHERE a.id=? AND sg.guardian_id=? AND g.status='active'
 FOR UPDATE`, assignmentID, guardianID).Row().Scan(&status, &due)
 		if err == sql.ErrNoRows {
 			return biz.ErrAssignmentNotFound

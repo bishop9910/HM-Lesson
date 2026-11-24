@@ -78,7 +78,7 @@ onShow(load);
 .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20rpx; }
 .title { font-size: 34rpx; font-weight: 700; }
 .sub { color: $hm-muted; font-size: 24rpx; }
-.card { background: #fff; border-radius: $hm-radius; padding: 24rpx; margin-bottom: 18rpx; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 24rpx; margin-bottom: 18rpx; }
 .row { display: flex; justify-content: space-between; }
 .name { font-size: 29rpx; font-weight: 600; }
 .late { color: $hm-danger; font-size: 22rpx; }
@@ -88,7 +88,7 @@ onShow(load);
 .go { color: $hm-primary; }
 .hint { color: $hm-muted; text-align: center; padding: 40rpx 0; }
 .hint.error { color: $hm-danger; }
-.empty { background: #fff; border-radius: $hm-radius; padding: 60rpx 30rpx; text-align: center; }
+.empty { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 60rpx 30rpx; text-align: center; }
 .empty-title { display: block; font-size: 29rpx; font-weight: 600; }
 .empty-sub { display: block; color: $hm-muted; font-size: 24rpx; margin-top: 10rpx; }
 </style>

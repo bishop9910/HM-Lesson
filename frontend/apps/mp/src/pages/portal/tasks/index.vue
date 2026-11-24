@@ -99,10 +99,10 @@ onShow(load);
 <style lang="scss">
 @import "@/styles/tokens.scss";
 .page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx 60rpx; }
-.tabs { display: flex; background: #fff; border-radius: 16rpx; padding: 8rpx; margin-bottom: 22rpx; }
+.tabs { display: flex; background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 8rpx; margin-bottom: 22rpx; }
 .tab { flex: 1; text-align: center; padding: 16rpx; font-size: 26rpx; color: $hm-muted; border-radius: 12rpx; }
 .tab.on { background: $hm-primary; color: #fff; }
-.card { background: #fff; border-radius: $hm-radius; padding: 24rpx; margin-bottom: 18rpx; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 24rpx; margin-bottom: 18rpx; }
 .row { display: flex; justify-content: space-between; gap: 14rpx; }
 .title { font-size: 29rpx; font-weight: 600; color: $hm-text; flex: 1; }
 .badge { font-size: 22rpx; padding: 4rpx 12rpx; border-radius: 999rpx; background: #f1f5f9; color: $hm-muted; }
@@ -115,7 +115,7 @@ onShow(load);
 .reason { display: block; margin-top: 10rpx; color: #991b1b; font-size: 23rpx; }
 .hint { color: $hm-muted; text-align: center; padding: 40rpx 0; }
 .hint.error { color: $hm-danger; }
-.empty { background: #fff; border-radius: $hm-radius; padding: 60rpx 30rpx; text-align: center; }
+.empty { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 60rpx 30rpx; text-align: center; }
 .empty-title { display: block; font-size: 28rpx; font-weight: 600; }
 .empty-sub { display: block; color: $hm-muted; font-size: 24rpx; margin-top: 10rpx; }
 </style>

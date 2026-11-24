@@ -306,18 +306,18 @@ onShow(load);
 @import "@/styles/tokens.scss";
 .page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx 48rpx; }
 .toolbar { display: flex; gap: 16rpx; align-items: center; margin-bottom: 20rpx; }
-.search { flex: 1; height: 72rpx; padding: 0 24rpx; background: #fff; border-radius: 16rpx; font-size: 26rpx; }
-.primary { background: $hm-primary; color: #fff; border-radius: 16rpx; font-size: 26rpx; }
-.ghost { background: #fff; color: $hm-primary; border: 1rpx solid $hm-border; border-radius: 16rpx; font-size: 26rpx; }
+.search { flex: 1; height: 72rpx; padding: 0 24rpx; background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 26rpx; }
+.primary { background: $hm-primary-strong; color: #fff; border-radius: 10rpx; font-size: 26rpx; }
+.ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 26rpx; }
 .filters { white-space: nowrap; margin-bottom: 20rpx; }
-.chip { display: inline-block; padding: 10rpx 24rpx; margin-right: 12rpx; border-radius: 999rpx; background: #fff; color: $hm-muted; font-size: 24rpx; }
-.chip.on { background: $hm-primary; color: #fff; }
-.card { background: #fff; border-radius: $hm-radius; padding: 26rpx; margin-bottom: 20rpx; box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.04); }
+.chip { display: inline-block; padding: 10rpx 24rpx; margin-right: 12rpx; border-radius: 999rpx; background: transparent; color: $hm-muted; border: 1rpx solid $hm-rule; font-size: 24rpx; }
+.chip.on { background: $hm-primary-strong; color: #fff; border-color: $hm-primary-strong; }
+.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 26rpx; margin-bottom: 20rpx; }
 .row { display: flex; justify-content: space-between; gap: 16rpx; align-items: center; }
 .title { font-size: 30rpx; font-weight: 700; color: $hm-text; flex: 1; }
-.badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: #f1f5f9; color: $hm-muted; }
-.badge.published { background: #ccfbf1; color: #115e59; }
-.badge.closed { background: #f1f5f9; color: #64748b; }
+.badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: rgba(34, 48, 42, 0.07); color: $hm-muted; }
+.badge.published { background: #d9ece4; color: #115e59; }
+.badge.closed { background: rgba(34, 48, 42, 0.07); color: $hm-muted; }
 .badge.draft { background: #fef3c7; color: #92400e; }
 .meta { display: flex; gap: 20rpx; color: $hm-muted; font-size: 23rpx; margin-top: 10rpx; }
 .template { padding: 22rpx 0; border-bottom: 1rpx solid $hm-border; }
@@ -332,24 +332,26 @@ onShow(load);
 .bar-in { height: 100%; background: $hm-primary; }
 .hint { color: $hm-muted; text-align: center; padding: 40rpx 0; font-size: 26rpx; }
 .hint.error { color: $hm-danger; }
-.empty { background: #fff; border-radius: $hm-radius; padding: 60rpx 30rpx; text-align: center; }
+.empty { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 60rpx 30rpx; text-align: center; }
 .empty-title { display: block; font-size: 30rpx; color: $hm-text; font-weight: 600; }
 .empty-sub { display: block; font-size: 24rpx; color: $hm-muted; margin-top: 10rpx; }
 .mask { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: flex-end; z-index: 20; }
-.sheet { width: 100%; max-height: 88vh; background: #fff; border-radius: 32rpx 32rpx 0 0; padding: 30rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); box-sizing: border-box; }
-.sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20rpx; }
-.sheet-title { font-size: 32rpx; font-weight: 700; }
-.close, .link { color: $hm-primary; font-size: 25rpx; }
-.field { width: 100%; box-sizing: border-box; background: #f8fafc; border-radius: 14rpx; padding: 20rpx 22rpx; font-size: 27rpx; margin-bottom: 16rpx; }
-.area { height: 130rpx; }
-.field-row { display: flex; gap: 12rpx; margin-bottom: 20rpx; }
+.sheet { width: 100%; max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch; background: $hm-paper; border-radius: 28rpx 28rpx 0 0; padding: 30rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); box-sizing: border-box; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24rpx; }
+.sheet-title { font-family: $hm-serif; font-size: 34rpx; font-weight: 700; color: $hm-ink; }
+.close, .link { color: $hm-primary-strong; font-size: 25rpx; }
+.field { display: block; width: 100%; height: 88rpx; padding: 0 24rpx; line-height: 88rpx; box-sizing: border-box; border: 1rpx solid $hm-rule; background: rgba(255, 255, 255, 0.55); border-radius: 10rpx; font-size: 28rpx; color: $hm-ink; margin-bottom: 18rpx; }
+.area { height: 180rpx; padding: 20rpx 24rpx; line-height: 1.6; }
+.field-row { display: flex; gap: 12rpx; margin-bottom: 22rpx; }
 .field-row picker { flex: 1; }
-.picker { background: #f8fafc; border-radius: 14rpx; padding: 18rpx; text-align: center; font-size: 24rpx; color: $hm-text; }
-.select-head { display: flex; justify-content: space-between; font-size: 25rpx; color: $hm-text; margin: 10rpx 0; }
+.picker { display: block; background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 22rpx 12rpx; text-align: center; font-size: 25rpx; color: $hm-ink; }
+.select-head { display: flex; justify-content: space-between; font-size: 25rpx; color: $hm-ink; margin: 6rpx 0 14rpx; }
 .student-list { max-height: 320rpx; }
-.student { display: flex; justify-content: space-between; align-items: center; padding: 18rpx; border-radius: 14rpx; background: #f8fafc; margin-bottom: 10rpx; font-size: 26rpx; }
-.student.on { background: #ccfbf1; color: #115e59; }
-.grade { font-size: 22rpx; color: $hm-muted; }
+.student { display: flex; justify-content: space-between; align-items: center; padding: 20rpx; border-radius: 10rpx; background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; margin-bottom: 10rpx; font-size: 26rpx; }
+.student.on { background: #d9ece4; border-color: $hm-primary; color: #115e59; }
+.grade { font-size: 22rpx; color: rgba(34, 48, 42, 0.55); }
 .actions { display: flex; gap: 16rpx; margin-top: 24rpx; }
 .actions button { flex: 1; }
+.actions .primary { background: $hm-primary-strong; color: #f7f3e8; }
+.actions .ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; }
 </style>

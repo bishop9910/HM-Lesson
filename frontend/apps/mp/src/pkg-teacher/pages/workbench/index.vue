@@ -69,15 +69,21 @@ const actions = computed<ActionItem[]>(() => {
 });
 
 async function load(): Promise<void> {
-  if (!session.isTeacher) {
+  if (!session.token) {
     uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
     return;
   }
   loading.value = true;
   errorText.value = "";
   try {
+    // 先让服务端确认角色：本地 hm_role 可能缺失/过期，不能据此提前踢回登录。
     const ok = await session.refresh();
-    if (!ok && !session.token) {
+    if (ok && !session.isTeacher) {
+      session.clear();
+      uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
+      return;
+    }
+    if (!session.token) {
       uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
       return;
     }
@@ -113,7 +119,7 @@ function go(key: ActionKey): void {
 
 function logout(): void {
   session.clear();
-  uni.reLaunch({ url: "/pages/index/index" });
+  uni.reLaunch({ url: "/pages/home/index" });
 }
 </script>
 
@@ -169,137 +175,149 @@ function logout(): void {
 
 .page {
   min-height: 100vh;
-  padding: 40rpx $hm-space 64rpx;
+  padding: 44rpx $hm-space calc(64rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: $hm-bg;
-  padding-bottom: calc(64rpx + env(safe-area-inset-bottom));
+  background-color: $hm-paper;
+  background-image: linear-gradient(
+    to bottom,
+    rgba(34, 48, 42, 0.035) 1rpx,
+    transparent 1rpx
+  );
+  background-size: 100% 64rpx;
 }
 
 .header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20rpx;
 }
 
 .header-main {
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
 }
 
 .eyebrow {
+  margin-bottom: 10rpx;
   font-size: 22rpx;
-  color: $hm-muted;
-  letter-spacing: 2rpx;
+  letter-spacing: 6rpx;
+  color: $hm-primary-strong;
 }
 
 .title {
-  font-size: 44rpx;
-  line-height: 1.25;
+  font-family: $hm-serif;
+  font-size: 48rpx;
+  line-height: 1.2;
   font-weight: 700;
-  color: $hm-text;
+  color: $hm-ink;
 }
 
 .role-chip {
   flex-shrink: 0;
-  margin-top: 6rpx;
-  padding: 8rpx 20rpx;
-  border-radius: 999rpx;
-  background: rgba(13, 148, 136, 0.1);
-  color: $hm-primary;
-  font-size: 22rpx;
-  font-weight: 600;
+  margin-top: 8rpx;
+  padding: 6rpx 18rpx;
+  border: 1rpx solid $hm-rule;
+  border-radius: 6rpx;
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(34, 48, 42, 0.62);
+  font-size: 21rpx;
+  letter-spacing: 2rpx;
 }
 
 .hint,
 .error {
   display: block;
-  margin-top: 20rpx;
+  margin-top: 22rpx;
   font-size: 24rpx;
-  color: $hm-muted;
+  color: rgba(34, 48, 42, 0.55);
 }
 
 .error {
-  color: #b91c1c;
+  color: #a33a2b;
 }
 
 .stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
-  margin-top: 28rpx;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: 30rpx;
+  border-top: 1rpx solid $hm-rule;
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
-  padding: 22rpx 24rpx;
-  background: $hm-surface;
-  border: 1rpx solid $hm-border;
-  border-radius: 20rpx;
+  width: 49%;
+  box-sizing: border-box;
+  padding: 24rpx 6rpx 22rpx;
+  border-bottom: 1rpx solid $hm-rule;
 }
 
 .stat-value {
-  font-size: 38rpx;
+  font-family: $hm-serif;
+  font-size: 42rpx;
   line-height: 1.1;
   font-weight: 700;
-  color: $hm-text;
+  color: $hm-ink;
 }
 
 .stat-label {
+  margin-top: 6rpx;
   font-size: 22rpx;
-  color: $hm-muted;
+  color: rgba(34, 48, 42, 0.55);
 }
 
 .section-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin: 40rpx 4rpx 18rpx;
+  margin: 42rpx 2rpx 18rpx;
 }
 
 .section-title {
-  font-size: 28rpx;
+  font-family: $hm-serif;
+  font-size: 30rpx;
   font-weight: 700;
-  color: $hm-text;
+  letter-spacing: 2rpx;
+  color: $hm-ink;
 }
 
 .section-hint {
-  font-size: 22rpx;
-  color: $hm-muted;
+  font-size: 21rpx;
+  color: rgba(34, 48, 42, 0.45);
 }
 
 .actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .action {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  min-height: 132rpx;
-  padding: 22rpx 20rpx;
+  width: 48.5%;
+  min-height: 124rpx;
+  margin-bottom: 16rpx;
+  padding: 20rpx 18rpx;
   box-sizing: border-box;
-  background: $hm-surface;
-  border: 1rpx solid $hm-border;
-  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.38);
+  border: 1rpx solid $hm-rule;
+  border-radius: 10rpx;
   transition: transform 0.12s ease;
 }
 
 .action--pressed {
-  transform: scale(0.98);
+  transform: scale(0.985);
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .action--primary {
-  grid-column: 1 / -1;
-  min-height: 148rpx;
-  background: $hm-primary;
-  border-color: $hm-primary;
+  width: 100%;
+  min-height: 136rpx;
+  background: $hm-primary-strong;
+  border-color: $hm-primary-strong;
 }
 
 .action-icon {
@@ -307,75 +325,80 @@ function logout(): void {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 18rpx;
-  background: rgba(13, 148, 136, 0.1);
-  color: $hm-primary;
-  font-size: 26rpx;
+  width: 54rpx;
+  height: 54rpx;
+  margin-right: 14rpx;
+  border: 1rpx solid rgba(34, 48, 42, 0.28);
+  border-radius: 4rpx;
+  color: $hm-primary-strong;
+  font-family: $hm-serif;
+  font-size: 25rpx;
   font-weight: 700;
 }
 
 .action--primary .action-icon {
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
+  border-color: rgba(247, 243, 232, 0.5);
+  color: #f7f3e8;
 }
 
 .action-copy {
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
   min-width: 0;
 }
 
 .action-title {
-  font-size: 28rpx;
+  font-size: 27rpx;
   font-weight: 600;
-  color: $hm-text;
+  color: $hm-ink;
 }
 
 .action-desc {
-  font-size: 21rpx;
+  margin-top: 4rpx;
+  font-size: 20rpx;
   line-height: 1.35;
-  color: $hm-muted;
+  color: rgba(34, 48, 42, 0.55);
 }
 
 .action--primary .action-title {
-  color: #ffffff;
+  color: #f7f3e8;
 }
 
 .action--primary .action-desc {
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(247, 243, 232, 0.72);
 }
 
 .action-badge {
   position: absolute;
-  top: 16rpx;
-  right: 16rpx;
-  min-width: 32rpx;
-  height: 32rpx;
+  top: 12rpx;
+  right: 12rpx;
+  min-width: 30rpx;
+  height: 30rpx;
   padding: 0 8rpx;
   box-sizing: border-box;
-  border-radius: 16rpx;
+  border-radius: 15rpx;
   background: $hm-accent;
   color: #ffffff;
-  font-size: 20rpx;
-  line-height: 32rpx;
+  font-size: 19rpx;
+  line-height: 30rpx;
   text-align: center;
 }
 
 .logout {
   margin-top: 36rpx;
-  height: 80rpx;
-  line-height: 80rpx;
-  border-radius: 40rpx;
+  height: 76rpx;
+  line-height: 76rpx;
   background: transparent;
-  border: 1rpx solid $hm-border;
-  color: $hm-muted;
-  font-size: 26rpx;
+  border: 0;
+  color: rgba(34, 48, 42, 0.5);
+  font-size: 24rpx;
+}
+
+.logout::after {
+  border: 0;
 }
 
 .logout--pressed {
-  background: rgba(0, 0, 0, 0.03);
+  opacity: 0.7;
 }
 </style>

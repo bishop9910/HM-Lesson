@@ -247,9 +247,9 @@ async function rollback(): Promise<void> {
 .card {
   margin-bottom: 24rpx;
   padding: 32rpx;
-  border-radius: 28rpx;
-  background: #ffffff;
-  box-shadow: 0 10rpx 30rpx rgba(17, 59, 54, 0.06);
+  border-radius: 10rpx;
+  background: rgba(255, 255, 255, 0.38);
+  border: 1rpx solid #d9cab0;
 }
 .btn {
   width: 100%;
