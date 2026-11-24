@@ -1,6 +1,6 @@
 # 测试报告 · HM-Lesson
 
-> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请、M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/家长端学员详情/Excel 导入，以及 M3 任务/提交/批阅/打回/模板/家长任务与档案接口；前端完成教师学员/跟进/审批/导入/任务/批阅页与家长登录/门户/任务/档案页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查、owner 登录、dashboard、学员档案编辑、家长端学员详情与 Excel 全链路**。M3 尚未部署实测。没有真实执行过的测试不得写“通过”。
+> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请、M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/家长端学员详情/Excel 导入，以及 M3 任务/提交/批阅/打回/模板/家长任务与档案接口；前端完成教师学员/跟进/审批/导入/任务/批阅页与家长登录/门户/任务/档案页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查、owner 登录、dashboard、学员档案编辑、家长端学员详情与 Excel 全链路**。M3 已部署：模板 CRUD、任务/待批阅只读接口与错误路径已在公网实测；M3 全链路（建任务→发布→提交→批阅）因生产无学员、无删除接口，尚未造数实测。没有真实执行过的测试不得写“通过”。
 > 维护：每完成一个里程碑追加一轮记录；没有真实执行过的测试不得写“通过”。
 
 ## 1. 环境
@@ -49,6 +49,9 @@
 | 2026-11-24 | M2 学员档案编辑 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 学员详情增加年级/学校/分组/标签/下次回访/备注编辑；后端复用 PATCH；未连 MySQL 实测 |
 | 2026-11-24 | M2 家长端学员详情 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 新增 `GET /api/v1/portal/students/{id}` 与 `pages/portal/student.vue`：剩余课时、作业状态、课时流水；未连 MySQL 实测 |
 | 2026-11-24 | M3 任务后端 | `gofmt -l`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` | **通过** | 新增 `internal/biz/task.go`、`internal/data/task.go`、`internal/service/task.go` 与任务 biz 表驱动测试；任务接口未连 MySQL 实测 |
+| 2026-11-24 | M3 云端接口（只读/模板） | 临时公网 URL：`/task-templates` CRUD、`/tasks`、`/reviews`、错误参数 | **通过（部分）** | 模板创建/列表/修改/删除并清理干净；`/tasks`、`/reviews` 200 空列表；非法截止 400、发布不存在任务 404、批阅不存在作业 404；`000004` 迁移已在线；未创建学员/任务，避免生产测试数据 |
+| 2026-11-24 | 错误响应单次写出 | 本地无 DB 启动 + `curl /api/v1/tasks` | **通过** | 503 只返回一份 JSON，响应头 `X-Hm-Handled: 1`；修复前公网无 token 请求出现 401+500 两段 JSON |
+| 2026-11-24 | M3 云端全链路 | 教师建任务→发布→家长提交→批阅→重交 | 未执行 | 生产学员数为 0，且没有删除学员/任务接口；为避免留下测试数据，未造数。需用真实学员或授权造数后执行 |
 | 2026-11-24 | M3 任务模板迁移 | `go test ./internal/data -count=1` | **通过** | 新增 `000004_task_templates.up/down.sql`；`TestLoadMigrations` 期望 4 个版本 |
 | 2026-11-24 | M3 前端 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 新增教师任务/详情/待批阅、家长任务/详情/档案、模板选择；产物 261,425 字节 / 81 文件；仅 Sass 告警 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
@@ -91,6 +94,8 @@
 | D-03 | Sass 报 `@import` 与 legacy JS API 弃用 | 低 | 待处理 | 迁移到 `@use` 需改 tokens 与各页面引用；不影响构建，排入 M2 |
 | D-04 | 公网 `GET /api/v1/dashboard/summary` 返回 500 | 高 | 已修复并复测 | 查询误用 `submissions.status`（`submissions` 无 status 列），改为 `task_assignments.status='submitted'`；2026-11-24 19:55 公网复测 200 |
 | D-05 | 家长端复用教师 DTO，泄露 `note/tags/next_follow_up_at` | 高 | 已修复，待部署 | 新增 `portalStudentDTO`，只返回 id/姓名/年级/学校/分组/状态 |
+| D-06 | 无 token 请求返回 401 JSON 后又追加 500 JSON | 高 | 已修复，待部署 | `fail()` 写响应后返回 sentinel error，并配置 `khttp.ErrorEncoder` 识别 `X-HM-Handled`，避免 Kratos 二次编码 |
+| D-07 | `PATCH /task-templates/{id}` 返回 `created_by=""`、`created_at` 为零值 | 中 | 已修复，待部署 | 更新后重新 SELECT 整行回填 |
 
 
 

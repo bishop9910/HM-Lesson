@@ -464,6 +464,22 @@ UPDATE task_templates SET title=?,description=?,type=?,due_offset_hours=? WHERE 
 	if res.RowsAffected == 0 {
 		return biz.ErrTaskNotFound
 	}
+	var row struct {
+		ID             string    `gorm:"column:id"`
+		Title          string    `gorm:"column:title"`
+		Description    string    `gorm:"column:description"`
+		Type           string    `gorm:"column:type"`
+		DueOffsetHours int       `gorm:"column:due_offset_hours"`
+		CreatedBy      string    `gorm:"column:created_by"`
+		CreatedAt      time.Time `gorm:"column:created_at"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+SELECT id,title,description,type,due_offset_hours,created_by,created_at
+FROM task_templates WHERE id=?`, t.ID).Scan(&row).Error; err != nil {
+		return err
+	}
+	t.Title, t.Description, t.Type = row.Title, row.Description, row.Type
+	t.DueOffsetHours, t.CreatedBy, t.CreatedAt = row.DueOffsetHours, row.CreatedBy, row.CreatedAt
 	return nil
 }
 

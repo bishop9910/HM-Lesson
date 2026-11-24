@@ -188,11 +188,16 @@ func mapBizError(ctx khttp.Context, err error) error {
 	}
 }
 
+var errHandled = errors.New("response already written")
+
 func fail(ctx khttp.Context, code int, reason, message string) error {
-	return ctx.JSON(code, map[string]any{
+	// 标记该响应已由业务层写出，避免 Kratos 错误编码器再写一份 JSON。
+	ctx.Response().Header().Set("X-HM-Handled", "1")
+	_ = ctx.JSON(code, map[string]any{
 		"reason":  reason,
 		"message": message,
 	})
+	return errHandled
 }
 
 // WriteJSON 仅用于测试/工具，保持与路由返回一致。

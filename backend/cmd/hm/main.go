@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -31,6 +32,12 @@ func main() {
 		khttp.Address(cfg.HTTPAddr),
 		khttp.Timeout(15*time.Second),
 		khttp.Middleware(recovery.Recovery()),
+		khttp.ErrorEncoder(func(w http.ResponseWriter, r *http.Request, err error) {
+			if w.Header().Get("X-HM-Handled") != "" {
+				return
+			}
+			khttp.DefaultErrorEncoder(w, r, err)
+		}),
 	)
 	router := srv.Route("/")
 	router.GET("/healthz", func(ctx khttp.Context) error {
