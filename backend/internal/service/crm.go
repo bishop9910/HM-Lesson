@@ -381,9 +381,9 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	if err != nil {
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "登录失败")
 	}
-	out := make([]studentDTO, 0, len(students))
+	out := make([]portalStudentDTO, 0, len(students))
 	for _, st := range students {
-		out = append(out, toStudentDTO(st))
+		out = append(out, toPortalStudentDTO(st))
 	}
 	return ctx.JSON(http.StatusOK, map[string]any{
 		"token": tok, "expires_at": exp.UTC().Format("2006-01-02T15:04:05Z"),

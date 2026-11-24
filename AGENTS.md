@@ -12,7 +12,7 @@
 
 **不再使用**：Debian 自建服务器、Docker Compose 生产部署、Caddy/Nginx 反向代理、自建 SeaweedFS/MinIO（生产）、服务器域名与域名 ICP 备案依赖（小程序侧；小程序备案已完成）。
 
-当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回/批改图、家长任务/提交/拍照/档案、发布与批阅站内弹窗通知。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**待** 云托管重新部署验证通知/图片与 M3 全链路。不要假设任何业务接口、表数据、页面已完成。
+当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回/批改图、家长任务/提交/拍照/档案、发布与批阅站内弹窗通知。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**生产已验证** M2/M3 主链路、逾期提交、任务删除、站内通知与批改图字段；**待真机验证**相机拍摄/`wx.cloud.uploadFile` 与小程序弹窗点按。不要假设任何业务接口、表数据、页面已完成。
 
 ## 1. 开始任何任务前
 
@@ -49,7 +49,7 @@
 7. **禁止擅自改生产表结构**：所有表变更必须写成 `backend/migrations/NNNN_*.up.sql` + `.down.sql`（ADR-003）；改列/删列必须在空库验证，禁止在生产库执行破坏性 DDL 而没有备份与用户确认。
 8. **禁止 `any` / `@ts-ignore` / `//nolint` 滥用**：确需使用时必须写原因；`any` 在评审中视为缺陷。
 9. **禁止删除或改写用户数据语义**：退课=归档、流失=状态，不得物理删除学员/任务/流水。课时余额只能由流水推导。
-10. **禁止扩大范围**：不做需求文档“范围外”的功能（即时通讯/聊天/客服会话/群聊、支付、录播、助教子账号、短信、自动排课最优解），除非用户明确要求并更新文档。
+10. **禁止扩大范围**：不做需求文档“范围外”的功能（即时通讯/聊天/客服会话/群聊、支付、录播、短信、自动排课最优解），除非用户明确要求并更新文档。多老师 / `assistant` 已是本期能力，不属于范围外。
 11. **禁止在未获授权时执行破坏性 git 操作**：`push --force`、`reset --hard` 到远端、删除分支、改写历史。
 12. **禁止把临时脚本/调试文件留在仓库根目录**；用完删除或放 `scripts/dev/` 并说明。
 13. **禁止依赖云托管公网域名上线**：小程序必须走 `wx.cloud.callContainer` / `wx.cloud.connectContainer`；生产要关闭“公网访问”。默认公网域名只用于临时联调。
@@ -171,7 +171,7 @@ HM-Lesson/
 
 ## 7. 安全与权限（最高优先级）
 
-- 家长身份 = `guardians` 行；可见范围 = 其绑定的 `student_guardians` 且状态为 `approved` 的学员。
+- 家长身份 = `guardians` 行；可见范围 = 其绑定的 `student_guardians`，且 `guardians.status='active'` 的学员。
 - 统一入口：`authz.RequireStudentAccess(ctx, studentID)`。**所有**按学员查询的 repo 方法必须接收已校验的 `studentID` 集合，禁止“查到再判断”。
 - 家长 token 只含 `guardian_id`，不含 `student_id` 列表；每次请求实时查绑定（可缓存 60s）。
 - 越权返回 `404`（不泄露存在性），不返回 `403`。

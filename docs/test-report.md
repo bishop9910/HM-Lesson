@@ -51,7 +51,7 @@
 | 2026-11-24 | M3 任务后端 | `gofmt -l`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` | **通过** | 新增 `internal/biz/task.go`、`internal/data/task.go`、`internal/service/task.go` 与任务 biz 表驱动测试；任务接口未连 MySQL 实测 |
 | 2026-11-24 | M3 云端接口（只读/模板） | 临时公网 URL：`/task-templates` CRUD、`/tasks`、`/reviews`、错误参数 | **通过（部分）** | 模板创建/列表/修改/删除并清理干净；`/tasks`、`/reviews` 200 空列表；非法截止 400、发布不存在任务 404、批阅不存在作业 404；`000004` 迁移已在线；未创建学员/任务，避免生产测试数据 |
 | 2026-11-24 | 错误响应单次写出 | 本地无 DB 启动 + `curl /api/v1/tasks` | **通过** | 503 只返回一份 JSON，响应头 `X-Hm-Handled: 1`；修复前公网无 token 请求出现 401+500 两段 JSON |
-| 2026-11-24 | M3 云端全链路 | 教师建任务→发布→家长提交→批阅→重交 | 未执行 | 生产学员数为 0，且没有删除学员/任务接口；为避免留下测试数据，未造数。需用真实学员或授权造数后执行 |
+| 2026-11-24 | M3 云端全链路 | 教师建任务→发布→家长提交→批阅→重交 | **通过（生产）** | 见下方“生产 M3 全链路”行；已用生产学员/家长跑通，无内置测试数据 |
 | 2026-11-24 | M3 任务模板迁移 | `go test ./internal/data -count=1` | **通过** | 新增 `000004_task_templates.up/down.sql`；`TestLoadMigrations` 期望 4 个版本 |
 | 2026-11-24 | M3 前端 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 新增教师任务/详情/待批阅、家长任务/详情/档案、模板选择；产物 261,425 字节 / 81 文件；仅 Sass 告警 |
 | 2026-11-24 | 教师工作台 UI 重做 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 工作台改为 2 列按钮组（主操作通栏 + 4 个快捷入口 + 退出），统计改 2×2 卡片；产物 264,431 字节 / 81 文件 |
@@ -63,8 +63,8 @@
 | 2026-11-24 | 生产 M3 发布 + 家长任务 | 教师建任务 → 发布 → `GET /portal/tasks` | **失败→已修复** | 发布返回 `assigned:1`；修复前家长任务列表 500；D-09 修复部署后复测 200，见下一行 |
 | 2026-11-24 | 生产 M3 全链路 | `/portal/tasks` → 提交 v1 → 打回 → 重交 v2 → 评分批阅 → 档案 | **通过** | 提交 v1 200 `is_late=false`；打回 200，家长看到 `returned` + 理由；重交 v2 200；评分 88 后 assignment `reviewed`、history=2；`/portal/archive` 200；任务统计 `submitted=1/reviewed=1/pending_review=0/rate=1`；仅文字提交，图片 fileID 未实测 |
 | 2026-11-24 | 任务详情红色块修复 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | `.stat.danger` 被全局 `.danger` 按钮样式命中；改为 `button.danger` / `.danger-btn`，逾期统计只保留红色数字；未真机复验 |
-| 2026-11-24 | 家长站内通知 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建+单测）** | 新增 `000005`：`notifications` + `task_assignments.review_file_ids`；发布/批阅/打回写通知；`GET /portal/notifications`、单条/全部已读；家长门户 `onShow` 有未读时弹窗并可跳任务；未连 MySQL/生产实测 |
-| 2026-11-24 | 拍照/批改图 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 家长提交 `sourceType:["camera","album"]`；教师批阅最多 9 张批改图，`review_file_ids` 入库并在任务详情展示；`uploadImage` 内部确保 `wx.cloud.init`；未真机拍照/云上传实测 |
+| 2026-11-24 | 家长站内通知 | 生产：发布→通知→批阅→通知→read-all | **通过（生产）** | `000005` 在线；发布写入 `task_published`，批阅写入 `task_reviewed`（评分 91）；`read-all` 后未读清零；删除任务后通知一并清理；未做小程序弹窗真机点按验证 |
+| 2026-11-24 | 拍照/批改图 | 生产 API：提交 `file_ids`、批阅 `review_file_ids`、详情回读 | **部分通过（API）** | 提交返回 2 个 fileID；批阅返回 2 个 `review_file_ids`，任务详情原样回读；真实相机拍摄与 `wx.cloud.uploadFile` 仍需真机验证 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |
 
@@ -75,9 +75,9 @@
 | TC-01 | 家长绑定与审批后可见 | 部分通过 | 绑定码路径已生产验证（024961 → 门户可见 test）；审批路径待 D-10 部署后验证 |
 | TC-02 | 家长只能看到本人学员 | 通过（生产） | `/portal/students/{id}` 用他人学员 id 返回 404 `STUDENT_NOT_FOUND` |
 | TC-03 | 任务下发按人生成提交记录 | 通过（生产） | 发布 `assigned:1`，生成 1 条 pending assignment |
-| TC-04 | 作业提交（文字+多图） | 部分通过 | 生产验证文字提交；图片 fileID 路径未实测 |
+| TC-04 | 作业提交（文字+多图） | 部分通过 | 生产 API 接受 2 个 fileID 并原样回读；真实拍照/上传未在真机验证 |
 | TC-05 | 打回→重交→再批阅 | 通过（生产） | v1 提交→打回（理由）→v2 重交→评分 88，history=2，家长档案可见 |
-| TC-06 | 逾期提交仍可交并标记 | 未执行 | `is_late=now>due` 已实现，需用已过期任务实测 |
+| TC-06 | 逾期提交仍可交并标记 | 通过（生产） | 逾期任务 `01a20df3...` 提交 200，`is_late=true`；教师评分 80，统计 `overdue=0`（关闭后） |
 | TC-07 | 家长只看到可预约时段 | 未执行 | |
 | TC-08 | 并发预约同一时段只有一条成功 | 未执行 | 高危 |
 | TC-09 | 驳回释放时段并通知 | 未执行 | |
@@ -111,7 +111,8 @@
 | D-09 | 生产 `GET /api/v1/portal/tasks` 500 `任务操作失败` | 高 | 已修复并线上复测 | `internal/data/task.go` 的家长任务/提交查询误用 `student_guardians.status`（该表无 status 列），改为只校验 `guardians.status='active'`；`portalAssignments` 与 `Submit` 两处均已修；2026-11-24 部署后家长任务/提交/打回/重交/批阅全链路通过 |
 | D-10 | 家长提交绑定申请后直接 active、未关联学员，待审批列表看不到，无法审批 | 高 | 已修复，待生产验证 | `ListPendingGuardians`/`ApproveGuardian`/`RejectGuardian` 只查 `status='pending'`；改为同时接受 `active && NOT EXISTS(student_guardians)`，老师可把未绑定的 active 家长分配到学员 |
 | D-11 | 家长用手机号直接登录时返回 `students: []`，用绑定码登录才返回学员 | 低 | 已修复，待部署 | `GuardianLogin` 的手机号路径只取 guardian 未查学员；补 `PortalHome` 回填 `students`，portal 本身不受影响 |
-| D-12 | 任务详情“0 逾期”背后出现整块红色 | 中 | 已修复，待部署 | `.danger` 是全局按钮类，误命中 `<view class="stat danger">`；改为 `button.danger`/`.danger-btn`，统计卡不再继承红底 |
+| D-12 | 任务详情“0 逾期”背后出现整块红色 | 中 | 已修复，待真机复验 | `.danger` 是全局按钮类，误命中 `<view class="stat danger">`；改为 `button.danger`/`.danger-btn`，统计卡不再继承红底；编译产物已确认 |
+| D-13 | 家长手机号直接登录返回的 `students` 仍含教师侧 `note/tags/next_follow_up_at` | 高 | 已修复，待部署 | `GuardianLogin` 回填 `PortalHome` 后复用了教师 `studentDTO`；改为 `toPortalStudentDTO`，只返回 id/姓名/年级/学校/分组/状态 |
 
 
 

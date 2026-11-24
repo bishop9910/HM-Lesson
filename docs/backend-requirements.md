@@ -26,7 +26,7 @@
 
 ### 1.2 明确不做
 
-直播、商城/在线支付、**即时通讯（聊天/会话/客服消息/群聊）**、自动最优排课、短信兜底、学情自动分析、录播挂载、多租户 SaaS。助教角色与成员表结构**一期预留但不开放登录**（Q5：以后可扩）。
+直播、商城/在线支付、**即时通讯（聊天/会话/客服消息/群聊）**、自动最优排课、短信兜底、学情自动分析、录播挂载、多租户 SaaS。助教 `assistant` 一期即可创建和登录，权限受限（Q5：多老师可同时使用）。
 
 ### 1.3 硬约束
 
@@ -286,8 +286,8 @@ backend/
 
 - `staff`（老师）：JWT `role=staff`，`sub=staff_id`。角色从 `staff.role` 读取（缓存 60s，权限变更即时失效）：
   - `owner`：全部权限，含成员管理、课时调整、导出、导入、通知发送；
-  - `assistant`（结构预留，一期不开放创建入口）：可批阅、下发任务、查看预约；**禁止**访问跟进记录、收费/课时成本、导出、导入、成员管理、设置。
-- 一期只创建 `owner`，但 `staff` 表、角色校验、审计必须按多老师实现；新增成员接口 `POST /api/v1/staff` 仅 `owner` 可用。
+  - `assistant`（可创建、可登录）：可批阅、下发任务、查看预约；**禁止**访问跟进记录、收费/课时成本、导出、导入、成员管理、设置。
+- 多老师为一等能力：owner 可创建/停用 owner 或 assistant；`staff` 表、角色校验、审计均按多老师实现；新增成员接口 `POST /api/v1/staff` 仅 `owner` 可用；owner 不可自降级/自停用，避免唯一负责人锁死。
 - `guardian`（家长）：JWT `role=guardian`，`sub=guardian_id`。必须 `status=active`。
 - 未绑定/待审批家长只能访问 `/auth/*` 与 `/me`，其余接口返回 `403 GUARDIAN_NOT_APPROVED`；越权资源仍统一 404。
 
@@ -465,7 +465,7 @@ backend/
 | POST | `/api/v1/auth/logout` | S/G | 吊销 |
 | GET | `/api/v1/me` | S/G | 当前主体、绑定状态、孩子列表 |
 | GET | `/api/v1/ws/ticket` | S/G | 换取 WS 短时 ticket |
-| GET/POST | `/api/v1/staff` | S(owner) | 成员列表 / 新增（Q5 预留） |
+| GET/POST | `/api/v1/staff` | S(owner) | 成员列表 / 新增（owner/assistant；Q5 已实现） |
 | PATCH | `/api/v1/staff/{id}` | S(owner) | 改角色/禁用（不可禁用最后一个 owner） |
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
@@ -508,9 +508,9 @@ backend/
 | POST | `/api/v1/assignments/{id}/review` | 批阅 / 打回（`return_reason` 非空即打回；`review_file_ids` 最多 9 张批改图） |
 | GET/POST | `/api/v1/task-templates` | 模板列表 / 新建 |
 | PATCH/DELETE | `/api/v1/task-templates/{id}` | 模板维护 |
-| GET | `/api/v1/portal/tasks` | 家长任务列表 |
-| GET | `/api/v1/portal/tasks/{id}` | 家长任务详情 + 历史提交 |
-| POST | `/api/v1/portal/tasks/{id}/submit` | 家长提交/重交（文字 + 图片 fileID） |
+| GET | `/api/v1/portal/tasks` | 家长任务列表（`id` 是 assignment id） |
+| GET | `/api/v1/portal/tasks/{id}` | 家长任务详情 + 历史提交；`{id}` 是 **assignment id** |
+| POST | `/api/v1/portal/tasks/{id}/submit` | 家长提交/重交（文字 + 图片 fileID）；`{id}` 是 **assignment id** |
 | GET | `/api/v1/portal/notifications` | 家长未读站内通知（作业发布/批阅/打回） |
 | POST | `/api/v1/portal/notifications/{id}/read` | 单条已读 |
 | POST | `/api/v1/portal/notifications/read-all` | 全部已读 |
