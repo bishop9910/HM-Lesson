@@ -12,7 +12,7 @@
 
 **不再使用**：Debian 自建服务器、Docker Compose 生产部署、Caddy/Nginx 反向代理、自建 SeaweedFS/MinIO（生产）、服务器域名与域名 ICP 备案依赖（小程序侧；小程序备案已完成）。
 
-当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回、家长任务/提交/档案、教师待批阅队列。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**待** 云托管重新部署验证 M3 与家长端隐私修复。不要假设任何业务接口、表数据、页面已完成。
+当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回/批改图、家长任务/提交/拍照/档案、发布与批阅站内弹窗通知。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**待** 云托管重新部署验证通知/图片与 M3 全链路。不要假设任何业务接口、表数据、页面已完成。
 
 ## 1. 开始任何任务前
 

@@ -57,23 +57,24 @@ type Submission struct {
 
 // TaskAssignment 是一个学员的一份任务。
 type TaskAssignment struct {
-	ID           string
-	TaskID       string
-	TaskTitle    string
-	TaskType     string
-	TaskDesc     string
-	StudentID    string
-	StudentName  string
-	Status       string
-	DueAt        *time.Time
-	SubmittedAt  *time.Time
-	ReviewedAt   *time.Time
-	Score        *float64
-	Comment      string
-	ReturnReason string
-	CreatedAt    time.Time
-	Submission   *Submission
-	History      []Submission
+	ID            string
+	TaskID        string
+	TaskTitle     string
+	TaskType      string
+	TaskDesc      string
+	StudentID     string
+	StudentName   string
+	Status        string
+	DueAt         *time.Time
+	SubmittedAt   *time.Time
+	ReviewedAt    *time.Time
+	Score         *float64
+	Comment       string
+	ReturnReason  string
+	ReviewFileIDs []string
+	CreatedAt     time.Time
+	Submission    *Submission
+	History       []Submission
 }
 
 // TaskStats 与看板口径一致。
@@ -116,7 +117,7 @@ type TaskRepo interface {
 	PublishTask(ctx context.Context, taskID string, studentIDs []string) (int, error)
 	ListAssignments(ctx context.Context, taskID string) ([]TaskAssignment, error)
 	ReviewQueue(ctx context.Context, limit int) ([]TaskAssignment, error)
-	ReviewAssignment(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string) error
+	ReviewAssignment(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string, reviewFileIDs []string) error
 
 	PortalTasks(ctx context.Context, guardianID string) ([]TaskAssignment, error)
 	PortalTask(ctx context.Context, guardianID, assignmentID string) (*TaskAssignment, error)
@@ -260,17 +261,22 @@ func (u *TaskUsecase) ReviewQueue(ctx context.Context) ([]TaskAssignment, error)
 	return u.repo.ReviewQueue(ctx, 100)
 }
 
-// Review 批阅；returnReason 非空即打回。
-func (u *TaskUsecase) Review(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string) error {
+// Review 批阅；returnReason 非空即打回；reviewFileIDs 为批改图（最多 9 张）。
+func (u *TaskUsecase) Review(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string, reviewFileIDs []string) error {
 	if score != nil && (*score < 0 || *score > 100) {
 		return ErrInvalidTask
 	}
 	comment = strings.TrimSpace(comment)
 	returnReason = strings.TrimSpace(returnReason)
-	if len([]rune(comment)) > 2000 || len([]rune(returnReason)) > 1000 {
+	if len([]rune(comment)) > 2000 || len([]rune(returnReason)) > 1000 || len(reviewFileIDs) > 9 {
 		return ErrInvalidTask
 	}
-	return u.repo.ReviewAssignment(ctx, assignmentID, reviewerID, score, comment, returnReason)
+	for _, id := range reviewFileIDs {
+		if strings.TrimSpace(id) == "" {
+			return ErrInvalidTask
+		}
+	}
+	return u.repo.ReviewAssignment(ctx, assignmentID, reviewerID, score, comment, returnReason, reviewFileIDs)
 }
 
 func (u *TaskUsecase) PortalList(ctx context.Context, guardianID string) ([]TaskAssignment, error) {

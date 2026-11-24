@@ -132,6 +132,18 @@ type CreateStudentInput struct {
 	Note           string
 }
 
+// Notification 是家长端站内通知，用于作业发布/批阅/打回弹窗。
+type Notification struct {
+	ID        string
+	Kind      string
+	Title     string
+	Body      string
+	RefType   string
+	RefID     string
+	CreatedAt time.Time
+	ReadAt    *time.Time
+}
+
 type CRMRepo interface {
 	ListStudents(ctx context.Context, f StudentFilter) ([]Student, int, error)
 	GetStudent(ctx context.Context, id string) (*Student, error)
@@ -147,6 +159,9 @@ type CRMRepo interface {
 	GuardianByPhone(ctx context.Context, phone string) (*GuardianRequest, error)
 	PortalHome(ctx context.Context, guardianID string) (*PortalHome, error)
 	PortalStudent(ctx context.Context, guardianID, studentID string) (*PortalStudent, error)
+	UnreadNotifications(ctx context.Context, guardianID string, limit int) ([]Notification, error)
+	MarkNotificationRead(ctx context.Context, guardianID, id string) error
+	MarkAllNotificationsRead(ctx context.Context, guardianID string) error
 }
 
 type CRMUsecase struct {
@@ -290,4 +305,22 @@ func (uc *CRMUsecase) PortalStudent(ctx context.Context, guardianID, studentID s
 		return nil, ErrStudentNotFound
 	}
 	return uc.repo.PortalStudent(ctx, guardianID, studentID)
+}
+
+func (uc *CRMUsecase) UnreadNotifications(ctx context.Context, guardianID string, limit int) ([]Notification, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	return uc.repo.UnreadNotifications(ctx, guardianID, limit)
+}
+
+func (uc *CRMUsecase) MarkNotificationRead(ctx context.Context, guardianID, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrGuardianNotFound
+	}
+	return uc.repo.MarkNotificationRead(ctx, guardianID, id)
+}
+
+func (uc *CRMUsecase) MarkAllNotificationsRead(ctx context.Context, guardianID string) error {
+	return uc.repo.MarkAllNotificationsRead(ctx, guardianID)
 }

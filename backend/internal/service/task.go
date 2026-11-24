@@ -39,22 +39,23 @@ type submissionDTO struct {
 }
 
 type assignmentDTO struct {
-	ID           string          `json:"id"`
-	TaskID       string          `json:"task_id"`
-	TaskTitle    string          `json:"task_title"`
-	TaskType     string          `json:"task_type"`
-	TaskDesc     string          `json:"task_description,omitempty"`
-	StudentID    string          `json:"student_id,omitempty"`
-	StudentName  string          `json:"student_name,omitempty"`
-	Status       string          `json:"status"`
-	DueAt        *string         `json:"due_at,omitempty"`
-	SubmittedAt  *string         `json:"submitted_at,omitempty"`
-	ReviewedAt   *string         `json:"reviewed_at,omitempty"`
-	Score        *float64        `json:"score,omitempty"`
-	Comment      string          `json:"comment"`
-	ReturnReason string          `json:"return_reason"`
-	Submission   *submissionDTO  `json:"submission,omitempty"`
-	History      []submissionDTO `json:"history,omitempty"`
+	ID            string          `json:"id"`
+	TaskID        string          `json:"task_id"`
+	TaskTitle     string          `json:"task_title"`
+	TaskType      string          `json:"task_type"`
+	TaskDesc      string          `json:"task_description,omitempty"`
+	StudentID     string          `json:"student_id,omitempty"`
+	StudentName   string          `json:"student_name,omitempty"`
+	Status        string          `json:"status"`
+	DueAt         *string         `json:"due_at,omitempty"`
+	SubmittedAt   *string         `json:"submitted_at,omitempty"`
+	ReviewedAt    *string         `json:"reviewed_at,omitempty"`
+	Score         *float64        `json:"score,omitempty"`
+	Comment       string          `json:"comment"`
+	ReturnReason  string          `json:"return_reason"`
+	ReviewFileIDs []string        `json:"review_file_ids,omitempty"`
+	Submission    *submissionDTO  `json:"submission,omitempty"`
+	History       []submissionDTO `json:"history,omitempty"`
 }
 
 func fmtTime(t *time.Time) *string {
@@ -93,7 +94,7 @@ func toAssignmentDTO(a biz.TaskAssignment) assignmentDTO {
 		ID: a.ID, TaskID: a.TaskID, TaskTitle: a.TaskTitle, TaskType: a.TaskType, TaskDesc: a.TaskDesc,
 		StudentID: a.StudentID, StudentName: a.StudentName, Status: a.Status,
 		DueAt: fmtTime(a.DueAt), SubmittedAt: fmtTime(a.SubmittedAt), ReviewedAt: fmtTime(a.ReviewedAt),
-		Score: a.Score, Comment: a.Comment, ReturnReason: a.ReturnReason,
+		Score: a.Score, Comment: a.Comment, ReturnReason: a.ReturnReason, ReviewFileIDs: a.ReviewFileIDs,
 	}
 	if a.Submission != nil {
 		s := toSubmissionDTO(*a.Submission)
@@ -223,9 +224,10 @@ func (s *Server) ReviewQueue(ctx khttp.Context) error {
 }
 
 type reviewRequest struct {
-	Score        *float64 `json:"score"`
-	Comment      string   `json:"comment"`
-	ReturnReason string   `json:"return_reason"`
+	Score         *float64 `json:"score"`
+	Comment       string   `json:"comment"`
+	ReturnReason  string   `json:"return_reason"`
+	ReviewFileIDs []string `json:"review_file_ids"`
 }
 
 func (s *Server) ReviewAssignment(ctx khttp.Context) error {
@@ -237,7 +239,7 @@ func (s *Server) ReviewAssignment(ctx khttp.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "请求体格式错误")
 	}
-	if err := s.tasks.Review(ctx, ctx.Vars().Get("id"), staff.ID, req.Score, req.Comment, req.ReturnReason); err != nil {
+	if err := s.tasks.Review(ctx, ctx.Vars().Get("id"), staff.ID, req.Score, req.Comment, req.ReturnReason, req.ReviewFileIDs); err != nil {
 		return mapTaskError(ctx, err)
 	}
 	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})

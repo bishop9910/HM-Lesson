@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -123,6 +124,12 @@ func (r *TaskRepo) DeleteTask(ctx context.Context, id string) error {
 		if status != biz.TaskDraft && status != biz.TaskClosed {
 			return biz.ErrTaskState
 		}
+		if err := tx.Exec(`
+DELETE FROM notifications
+WHERE (ref_type='task' AND ref_id=?)
+   OR (ref_type='assignment' AND ref_id IN (SELECT id FROM task_assignments WHERE task_id=?))`, id, id).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec("DELETE FROM submissions WHERE assignment_id IN (SELECT id FROM task_assignments WHERE task_id=?)", id).Error; err != nil {
 			return err
 		}
@@ -173,6 +180,18 @@ func (r *TaskRepo) PublishTask(ctx context.Context, taskID string, studentIDs []
 			}
 			count++
 		}
+		if err := tx.Exec(`
+INSERT INTO notifications (id,guardian_id,student_id,kind,title,body,ref_type,ref_id,created_at)
+SELECT UUID(),sg.guardian_id,sg.student_id,'task_published',
+       CONCAT('新作业：',t.title),
+       CONCAT('截止 ',DATE_FORMAT(t.due_at,'%m月%d日 %H:%i')),
+       'task',t.id,NOW(3)
+FROM student_guardians sg
+JOIN guardians g ON g.id=sg.guardian_id
+JOIN tasks t ON t.id=?
+WHERE sg.student_id IN (?) AND g.status='active'`, taskID, studentIDs).Error; err != nil {
+			return err
+		}
 		return tx.Exec("UPDATE tasks SET status=?,published_at=NOW(3) WHERE id=?", biz.TaskPublished, taskID).Error
 	})
 	return count, err
@@ -182,9 +201,16 @@ func scanAssignment(row interface{ Scan(...any) error }) (*biz.TaskAssignment, e
 	var a biz.TaskAssignment
 	var due, submitted, reviewed sql.NullTime
 	var score sql.NullFloat64
+	var reviewRaw []byte
 	if err := row.Scan(&a.ID, &a.TaskID, &a.TaskTitle, &a.TaskType, &a.TaskDesc, &a.StudentID, &a.StudentName,
-		&a.Status, &due, &submitted, &reviewed, &score, &a.Comment, &a.ReturnReason, &a.CreatedAt); err != nil {
+		&a.Status, &due, &submitted, &reviewed, &score, &a.Comment, &a.ReturnReason, &reviewRaw, &a.CreatedAt); err != nil {
 		return nil, err
+	}
+	if len(reviewRaw) > 0 {
+		_ = json.Unmarshal(reviewRaw, &a.ReviewFileIDs)
+		if a.ReviewFileIDs == nil {
+			a.ReviewFileIDs = []string{}
+		}
 	}
 	if due.Valid {
 		v := due.Time
@@ -207,7 +233,7 @@ func scanAssignment(row interface{ Scan(...any) error }) (*biz.TaskAssignment, e
 
 const assignmentSelect = `
 SELECT a.id,a.task_id,t.title,t.type,t.description,a.student_id,s.name,a.status,t.due_at,
- a.submitted_at,a.reviewed_at,a.score,a.comment,a.return_reason,a.created_at
+ a.submitted_at,a.reviewed_at,a.score,a.comment,a.return_reason,a.review_file_ids,a.created_at
 FROM task_assignments a
 JOIN tasks t ON t.id=a.task_id
 JOIN students s ON s.id=a.student_id`
@@ -302,7 +328,7 @@ func (r *TaskRepo) ReviewQueue(ctx context.Context, limit int) ([]biz.TaskAssign
 	return out, rows.Err()
 }
 
-func (r *TaskRepo) ReviewAssignment(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string) error {
+func (r *TaskRepo) ReviewAssignment(ctx context.Context, assignmentID, reviewerID string, score *float64, comment, returnReason string, reviewFileIDs []string) error {
 	status := biz.AssignmentReviewed
 	if returnReason != "" {
 		status = biz.AssignmentReturned
@@ -311,10 +337,18 @@ func (r *TaskRepo) ReviewAssignment(ctx context.Context, assignmentID, reviewerI
 	if score != nil {
 		scoreArg = *score
 	}
+	reviewJSON := []byte("[]")
+	if len(reviewFileIDs) > 0 {
+		b, err := json.Marshal(reviewFileIDs)
+		if err != nil {
+			return err
+		}
+		reviewJSON = b
+	}
 	res := r.db.WithContext(ctx).Exec(`
 UPDATE task_assignments
-SET status=?,score=?,comment=?,return_reason=?,reviewed_at=NOW(3),updated_at=NOW(3)
-WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, assignmentID)
+SET status=?,score=?,comment=?,return_reason=?,review_file_ids=?,reviewed_at=NOW(3),updated_at=NOW(3)
+WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, reviewJSON, assignmentID)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -327,6 +361,31 @@ WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, ass
 			return biz.ErrAssignmentNotFound
 		}
 		return biz.ErrAlreadyReviewed
+	}
+	kind := "task_reviewed"
+	title := "作业已批阅"
+	body := "老师已完成批阅，点击查看评分和评语。"
+	if status == biz.AssignmentReturned {
+		kind = "task_returned"
+		title = "作业被打回"
+		body = "请按老师意见修改后重新提交。"
+		if returnReason != "" {
+			body = returnReason
+		}
+	} else if score != nil {
+		body = fmt.Sprintf("评分 %.0f 分，点击查看评语。", *score)
+	}
+	if len([]rune(body)) > 500 {
+		body = string([]rune(body)[:500])
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+INSERT INTO notifications (id,guardian_id,student_id,kind,title,body,ref_type,ref_id,created_at)
+SELECT UUID(),sg.guardian_id,a.student_id,?,?,?,'assignment',a.id,NOW(3)
+FROM task_assignments a
+JOIN student_guardians sg ON sg.student_id=a.student_id
+JOIN guardians g ON g.id=sg.guardian_id
+WHERE a.id=? AND g.status='active'`, kind, title, body, assignmentID).Error; err != nil {
+		return err
 	}
 	return nil
 }

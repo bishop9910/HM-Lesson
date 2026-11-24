@@ -89,6 +89,7 @@ function chooseImages(): void {
   uni.chooseImage({
     count: left,
     sizeType: ["compressed"],
+    sourceType: ["camera", "album"],
     success: async (res) => {
       uploading.value = true;
       try {

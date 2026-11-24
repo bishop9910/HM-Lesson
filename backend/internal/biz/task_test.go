@@ -52,8 +52,8 @@ func (f *fakeTaskRepo) ReviewQueue(context.Context, int) ([]TaskAssignment, erro
 	return nil, nil
 }
 
-func (f *fakeTaskRepo) ReviewAssignment(_ context.Context, id, reviewer string, score *float64, comment, reason string) error {
-	f.reviewArgs = []any{id, reviewer, score, comment, reason}
+func (f *fakeTaskRepo) ReviewAssignment(_ context.Context, id, reviewer string, score *float64, comment, reason string, reviewFiles []string) error {
+	f.reviewArgs = []any{id, reviewer, score, comment, reason, reviewFiles}
 	return nil
 }
 
@@ -173,14 +173,14 @@ func TestTaskReviewAndSubmitValidation(t *testing.T) {
 	uc := NewTaskUsecase(repo)
 	ctx := context.Background()
 	high := 101.0
-	if err := uc.Review(ctx, "a1", "staff-1", &high, "", ""); !errors.Is(err, ErrInvalidTask) {
+	if err := uc.Review(ctx, "a1", "staff-1", &high, "", "", nil); !errors.Is(err, ErrInvalidTask) {
 		t.Fatalf("want invalid score, got %v", err)
 	}
 	ok := 88.0
-	if err := uc.Review(ctx, "a1", "staff-1", &ok, "不错", ""); err != nil {
+	if err := uc.Review(ctx, "a1", "staff-1", &ok, "不错", "", nil); err != nil {
 		t.Fatalf("review: %v", err)
 	}
-	if len(repo.reviewArgs) != 5 {
+	if len(repo.reviewArgs) != 6 {
 		t.Fatalf("review args=%v", repo.reviewArgs)
 	}
 

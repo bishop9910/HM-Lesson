@@ -7,8 +7,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(all) != 4 {
-		t.Fatalf("want 4 migrations, got %d", len(all))
+	if len(all) != 5 {
+		t.Fatalf("want 5 migrations, got %d", len(all))
 	}
 	if all[0].version != 1 || all[0].name != "init" {
 		t.Fatalf("unexpected first migration: %+v", all[0])

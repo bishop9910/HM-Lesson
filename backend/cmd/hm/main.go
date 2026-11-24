@@ -76,6 +76,9 @@ func main() {
 	router.POST("/api/v1/guardians/{id}/reject", authSrv.RejectGuardian)
 	router.POST("/api/v1/auth/guardian/login", authSrv.GuardianLogin)
 	router.GET("/api/v1/portal/home", authSrv.PortalHome)
+	router.GET("/api/v1/portal/notifications", authSrv.PortalNotifications)
+	router.POST("/api/v1/portal/notifications/read-all", authSrv.ReadAllNotifications)
+	router.POST("/api/v1/portal/notifications/{id}/read", authSrv.ReadNotification)
 	router.GET("/api/v1/portal/students/{id}", authSrv.PortalStudent)
 
 	// M2：Excel 学员导入。

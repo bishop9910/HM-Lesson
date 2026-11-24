@@ -62,6 +62,9 @@
 | 2026-11-24 | 生产家长绑定码 + 门户 | 生成 6 位码 → 家长手机号+码登录 → `/portal/home` → `/portal/students/{id}` | **通过** | 家长 `13000000000` 原为 active 未关联学员；绑定码 `024961` 兑换后自动建立 `student_guardians`，门户返回学员 test、余额 0、作业/流水空；详情不含 `note/tags`（D-05 已上线） |
 | 2026-11-24 | 生产 M3 发布 + 家长任务 | 教师建任务 → 发布 → `GET /portal/tasks` | **失败→已修复** | 发布返回 `assigned:1`；修复前家长任务列表 500；D-09 修复部署后复测 200，见下一行 |
 | 2026-11-24 | 生产 M3 全链路 | `/portal/tasks` → 提交 v1 → 打回 → 重交 v2 → 评分批阅 → 档案 | **通过** | 提交 v1 200 `is_late=false`；打回 200，家长看到 `returned` + 理由；重交 v2 200；评分 88 后 assignment `reviewed`、history=2；`/portal/archive` 200；任务统计 `submitted=1/reviewed=1/pending_review=0/rate=1`；仅文字提交，图片 fileID 未实测 |
+| 2026-11-24 | 任务详情红色块修复 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | `.stat.danger` 被全局 `.danger` 按钮样式命中；改为 `button.danger` / `.danger-btn`，逾期统计只保留红色数字；未真机复验 |
+| 2026-11-24 | 家长站内通知 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建+单测）** | 新增 `000005`：`notifications` + `task_assignments.review_file_ids`；发布/批阅/打回写通知；`GET /portal/notifications`、单条/全部已读；家长门户 `onShow` 有未读时弹窗并可跳任务；未连 MySQL/生产实测 |
+| 2026-11-24 | 拍照/批改图 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 家长提交 `sourceType:["camera","album"]`；教师批阅最多 9 张批改图，`review_file_ids` 入库并在任务详情展示；`uploadImage` 内部确保 `wx.cloud.init`；未真机拍照/云上传实测 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |
 
@@ -108,6 +111,7 @@
 | D-09 | 生产 `GET /api/v1/portal/tasks` 500 `任务操作失败` | 高 | 已修复并线上复测 | `internal/data/task.go` 的家长任务/提交查询误用 `student_guardians.status`（该表无 status 列），改为只校验 `guardians.status='active'`；`portalAssignments` 与 `Submit` 两处均已修；2026-11-24 部署后家长任务/提交/打回/重交/批阅全链路通过 |
 | D-10 | 家长提交绑定申请后直接 active、未关联学员，待审批列表看不到，无法审批 | 高 | 已修复，待生产验证 | `ListPendingGuardians`/`ApproveGuardian`/`RejectGuardian` 只查 `status='pending'`；改为同时接受 `active && NOT EXISTS(student_guardians)`，老师可把未绑定的 active 家长分配到学员 |
 | D-11 | 家长用手机号直接登录时返回 `students: []`，用绑定码登录才返回学员 | 低 | 已修复，待部署 | `GuardianLogin` 的手机号路径只取 guardian 未查学员；补 `PortalHome` 回填 `students`，portal 本身不受影响 |
+| D-12 | 任务详情“0 逾期”背后出现整块红色 | 中 | 已修复，待部署 | `.danger` 是全局按钮类，误命中 `<view class="stat danger">`；改为 `button.danger`/`.danger-btn`，统计卡不再继承红底 |
 
 
 

@@ -25,6 +25,30 @@ type studentDTO struct {
 	CreatedAt      string   `json:"created_at"`
 }
 
+type notificationDTO struct {
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Title     string  `json:"title"`
+	Body      string  `json:"body"`
+	RefType   string  `json:"ref_type"`
+	RefID     string  `json:"ref_id"`
+	CreatedAt string  `json:"created_at"`
+	ReadAt    *string `json:"read_at,omitempty"`
+}
+
+func toNotificationDTO(n biz.Notification) notificationDTO {
+	d := notificationDTO{
+		ID: n.ID, Kind: n.Kind, Title: n.Title, Body: n.Body,
+		RefType: n.RefType, RefID: n.RefID,
+		CreatedAt: n.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if n.ReadAt != nil {
+		v := n.ReadAt.UTC().Format("2006-01-02T15:04:05Z")
+		d.ReadAt = &v
+	}
+	return d
+}
+
 func toStudentDTO(s biz.Student) studentDTO {
 	d := studentDTO{
 		ID: s.ID, Name: s.Name, Grade: s.Grade, School: s.School,
@@ -445,6 +469,44 @@ func (s *Server) PortalHome(ctx khttp.Context) error {
 		"pending_tasks": home.PendingTasks,
 		"balance_hours": home.BalanceHours,
 	})
+}
+
+func (s *Server) PortalNotifications(ctx khttp.Context) error {
+	gid, err := s.requireGuardian(ctx)
+	if err != nil {
+		return err
+	}
+	items, err := s.crm.UnreadNotifications(ctx, gid, 20)
+	if err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	out := make([]notificationDTO, 0, len(items))
+	for _, n := range items {
+		out = append(out, toNotificationDTO(n))
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"items": out, "total": len(out)})
+}
+
+func (s *Server) ReadNotification(ctx khttp.Context) error {
+	gid, err := s.requireGuardian(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.crm.MarkNotificationRead(ctx, gid, ctx.Vars().Get("id")); err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) ReadAllNotifications(ctx khttp.Context) error {
+	gid, err := s.requireGuardian(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.crm.MarkAllNotificationsRead(ctx, gid); err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
 func mapCRMBizError(ctx khttp.Context, err error) error {

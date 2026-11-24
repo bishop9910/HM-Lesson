@@ -271,7 +271,7 @@ erDiagram
 
 #### `task_assignments`
 
-> 当前实际表只有 `id/task_id/student_id/status/submitted_at/reviewed_at/score/comment/return_reason/created_at/updated_at`；`guardian_id`、`reviewed_by`、`attempt_count`、`version` 未建列。
+> 当前实际表：`id/task_id/student_id/status/submitted_at/reviewed_at/score/comment/return_reason/review_file_ids/created_at/updated_at`（`review_file_ids` 由 `000005` 增加）；`guardian_id`、`reviewed_by`、`attempt_count`、`version` 未建列。
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
@@ -287,6 +287,7 @@ erDiagram
 | score | numeric(5,2) | NULL, CHECK 0~100 | |
 | comment | text | NULL | |
 | return_reason | text | NULL | |
+| review_file_ids | json | NULL | 教师批改图 fileID 数组，最多 9 张 |
 | attempt_count | int | NOT NULL DEFAULT 0 | |
 | version | int | NOT NULL DEFAULT 1 | |
 | created_at / updated_at | timestamptz | NOT NULL DEFAULT now() | |
@@ -500,7 +501,26 @@ CREATE UNIQUE INDEX uq_bookings_active_slot
 
 ### 3.8 通知投递 / 订阅 / 文件 / 导出 / 审计
 
-#### `notifications`（Outbox + 消息中心）
+#### `notifications`（实际：家长站内通知；000005）
+
+> 当前实现与本节原“投递队列”设计不同，实际表如下；订阅消息后续另建队列表，不复用此表。
+
+| 列 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| id | char(36) | PK | |
+| guardian_id | char(36) | NOT NULL FK guardians(id) | 收件家长 |
+| student_id | char(36) | NULL FK students(id) | 关联学员 |
+| kind | varchar(32) | NOT NULL | `task_published/task_reviewed/task_returned` |
+| title | varchar(128) | NOT NULL | 弹窗标题 |
+| body | varchar(500) | NOT NULL DEFAULT '' | 弹窗正文 |
+| ref_type | varchar(32) | NOT NULL | `task/assignment` |
+| ref_id | char(36) | NOT NULL | 业务 id |
+| read_at | datetime(3) | NULL | 已读时间 |
+| created_at | datetime(3) | NOT NULL | |
+
+索引：`idx_notifications_guardian_read (guardian_id, read_at, created_at)`、`idx_notifications_ref (ref_type, ref_id)`。
+
+#### `notifications`（规划中的投递队列，未建）
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |

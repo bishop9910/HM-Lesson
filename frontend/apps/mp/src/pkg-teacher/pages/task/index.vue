@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import { ApiError, request } from "@/utils/request";
+import { uploadImage } from "@/utils/cloud";
 
 interface Submission {
   id: string;
@@ -20,6 +21,7 @@ interface Assignment {
   score?: number;
   comment: string;
   return_reason: string;
+  review_file_ids?: string[];
   submission?: Submission;
   history?: Submission[];
 }
@@ -70,6 +72,8 @@ const active = ref<Assignment | null>(null);
 const score = ref("");
 const comment = ref("");
 const returnReason = ref("");
+const reviewImages = ref<string[]>([]);
+const uploading = ref(false);
 const saving = ref(false);
 
 function fmt(iso?: string): string {
@@ -98,13 +102,52 @@ function openReview(a: Assignment): void {
   score.value = a.score === undefined ? "" : String(a.score);
   comment.value = a.comment || "";
   returnReason.value = "";
+  reviewImages.value = [...(a.review_file_ids || [])];
+}
+
+function chooseReviewImages(): void {
+  if (uploading.value) return;
+  const left = 9 - reviewImages.value.length;
+  if (left <= 0) {
+    uni.showToast({ title: "最多 9 张", icon: "none" });
+    return;
+  }
+  uni.chooseImage({
+    count: left,
+    sizeType: ["compressed"],
+    sourceType: ["camera", "album"],
+    success: async (res) => {
+      uploading.value = true;
+      try {
+        for (const path of res.tempFilePaths) {
+          reviewImages.value.push(await uploadImage(path));
+        }
+      } catch (e) {
+        uni.showToast({ title: e instanceof Error ? e.message : "上传失败", icon: "none" });
+      } finally {
+        uploading.value = false;
+      }
+    },
+  });
+}
+
+function removeReviewImage(index: number): void {
+  reviewImages.value.splice(index, 1);
 }
 
 async function submitReview(): Promise<void> {
   if (!active.value) return;
+  if (uploading.value) {
+    uni.showToast({ title: "图片还在上传", icon: "none" });
+    return;
+  }
   saving.value = true;
   try {
-    const payload: Record<string, unknown> = { comment: comment.value.trim(), return_reason: returnReason.value.trim() };
+    const payload: Record<string, unknown> = {
+      comment: comment.value.trim(),
+      return_reason: returnReason.value.trim(),
+      review_file_ids: reviewImages.value,
+    };
     if (score.value.trim() !== "") payload.score = Number(score.value);
     await request(`/api/v1/assignments/${active.value.id}/review`, "POST", payload);
     uni.showToast({ title: returnReason.value.trim() ? "已打回" : "已批阅", icon: "success" });
@@ -200,7 +243,7 @@ onLoad((options) => {
         </view>
         <view class="bar"><view class="bar-in" :style="{ width: `${Math.round((stats?.rate || 0) * 100)}%` }" /></view>
         <button v-if="task.status === 'published'" class="ghost close" @tap="closeTask">结束任务</button>
-        <button v-if="task.status !== 'published'" class="danger close" @tap="deleteTask">{{ task.status === "closed" ? "删除已结束任务" : "删除草稿" }}</button>
+        <button v-if="task.status !== 'published'" class="danger-btn close" @tap="deleteTask">{{ task.status === "closed" ? "删除已结束任务" : "删除草稿" }}</button>
       </view>
 
       <view class="section-head">
@@ -229,6 +272,9 @@ onLoad((options) => {
           <text v-if="a.comment">评语：{{ a.comment }}</text>
           <text v-if="a.return_reason" class="danger-text">打回理由：{{ a.return_reason }}</text>
         </view>
+        <view v-if="a.review_file_ids?.length" class="images review-images">
+          <image v-for="f in a.review_file_ids" :key="f" :src="f" mode="aspectFill" class="thumb" @tap="preview(a.review_file_ids!, f)" />
+        </view>
         <button v-if="a.status === 'submitted'" class="primary review" @tap="openReview(a)">批阅</button>
         <button v-else-if="a.status === 'returned'" class="ghost review" disabled>已打回，等待重交</button>
       </view>
@@ -246,6 +292,16 @@ onLoad((options) => {
         <input v-model="score" class="field" type="digit" placeholder="评分 0–100（可空）" />
         <textarea v-model="comment" class="field area" placeholder="评语（家长可见）" maxlength="2000" />
         <textarea v-model="returnReason" class="field area danger" placeholder="打回理由（填写即打回，家长可重交）" maxlength="1000" />
+        <view class="upload-row">
+          <text class="upload-label">批改照片（最多 9 张）</text>
+          <text class="upload-btn" @tap="chooseReviewImages">{{ uploading ? "上传中…" : "拍照/相册" }}</text>
+        </view>
+        <view v-if="reviewImages.length" class="images">
+          <view v-for="(f, i) in reviewImages" :key="f" class="thumb-wrap">
+            <image :src="f" mode="aspectFill" class="thumb" @tap="preview(reviewImages, f)" />
+            <text class="thumb-remove" @tap="removeReviewImage(i)">×</text>
+          </view>
+        </view>
         <view class="actions">
           <button class="ghost" :disabled="saving" @tap="active = null">取消</button>
           <button class="primary" :disabled="saving" @tap="submitReview">提交批阅</button>
@@ -277,13 +333,19 @@ onLoad((options) => {
 .ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 25rpx; }
 .primary { background: $hm-primary; color: #fff; border-radius: 16rpx; font-size: 25rpx; }
 .close { margin-top: 18rpx; font-size: 24rpx; }
-.danger { background: #b91c1c; color: #fff; border: none; border-radius: 10rpx; font-size: 25rpx; }
+.danger-btn { background: #b91c1c; color: #fff; border: none; border-radius: 10rpx; font-size: 25rpx; }
 .section-head { display: flex; justify-content: space-between; margin: 10rpx 0 16rpx; font-size: 27rpx; font-weight: 600; }
 .sub { color: $hm-muted; font-size: 23rpx; font-weight: 400; }
 .name { font-size: 28rpx; font-weight: 600; }
 .submission { margin-top: 14rpx; background: rgba(255, 255, 255, 0.45); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 18rpx; }
 .text { font-size: 25rpx; line-height: 1.7; color: #334155; white-space: pre-wrap; }
 .images { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 12rpx; }
+.review-images { margin-top: 10rpx; }
+.upload-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6rpx; }
+.upload-label { font-size: 23rpx; color: $hm-muted; }
+.upload-btn { font-size: 23rpx; color: $hm-primary-strong; padding: 10rpx 18rpx; border: 1rpx dashed $hm-rule; border-radius: 8rpx; }
+.thumb-wrap { position: relative; }
+.thumb-remove { position: absolute; top: -10rpx; right: -10rpx; width: 34rpx; height: 34rpx; line-height: 30rpx; text-align: center; border-radius: 50%; background: #b91c1c; color: #fff; font-size: 24rpx; }
 .thumb { width: 150rpx; height: 150rpx; border-radius: 10rpx; }
 .version { display: block; font-size: 21rpx; color: $hm-muted; margin-top: 10rpx; }
 .reviewed { margin-top: 12rpx; font-size: 24rpx; color: #334155; display: flex; flex-direction: column; gap: 6rpx; }

@@ -17,6 +17,14 @@ interface Home {
   pending_tasks: number;
   balance_hours: number;
 }
+interface NotificationItem {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  ref_type: string;
+  ref_id: string;
+}
 
 const home = ref<Home | null>(null);
 const loading = ref(false);
@@ -52,8 +60,35 @@ async function load(): Promise<void> {
   }
 }
 
+async function loadNotifications(): Promise<void> {
+  if (!uni.getStorageSync("hm_guardian_token")) return;
+  try {
+    const res = await request<{ items: NotificationItem[] }>("/api/v1/portal/notifications", "GET", undefined, "guardian");
+    const items = res.items || [];
+    if (items.length === 0) return;
+    const content = items.slice(0, 3).map((n) => n.title).join("\n");
+    uni.showModal({
+      title: `你有 ${items.length} 条新消息`,
+      content,
+      confirmText: "查看作业",
+      cancelText: "稍后",
+      success: async (r) => {
+        try {
+          await request("/api/v1/portal/notifications/read-all", "POST", {}, "guardian");
+        } catch {
+          // 标记失败不阻断查看
+        }
+        if (r.confirm) goTasks();
+      },
+    });
+  } catch {
+    // 通知属于增强能力，失败不打断门户
+  }
+}
+
 onShow(() => {
   void load();
+  void loadNotifications();
 });
 
 function logout(): void {

@@ -535,3 +535,47 @@ func prefixColumns(prefix string) string {
 	}
 	return strings.Join(cols, ",")
 }
+
+func (r *crmRepo) UnreadNotifications(ctx context.Context, guardianID string, limit int) ([]biz.Notification, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+SELECT id,kind,title,body,ref_type,ref_id,created_at,read_at
+FROM notifications
+WHERE guardian_id=? AND read_at IS NULL
+ORDER BY created_at DESC
+LIMIT ?`, guardianID, limit).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]biz.Notification, 0)
+	for rows.Next() {
+		var n biz.Notification
+		var readAt sql.NullTime
+		if err := rows.Scan(&n.ID, &n.Kind, &n.Title, &n.Body, &n.RefType, &n.RefID, &n.CreatedAt, &readAt); err != nil {
+			return nil, err
+		}
+		if readAt.Valid {
+			v := readAt.Time
+			n.ReadAt = &v
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+func (r *crmRepo) MarkNotificationRead(ctx context.Context, guardianID, id string) error {
+	res := r.db.WithContext(ctx).Exec(
+		"UPDATE notifications SET read_at=NOW(3) WHERE id=? AND guardian_id=? AND read_at IS NULL", id, guardianID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return biz.ErrGuardianNotFound
+	}
+	return nil
+}
+
+func (r *crmRepo) MarkAllNotificationsRead(ctx context.Context, guardianID string) error {
+	return r.db.WithContext(ctx).Exec(
+		"UPDATE notifications SET read_at=NOW(3) WHERE guardian_id=? AND read_at IS NULL", guardianID).Error
+}
