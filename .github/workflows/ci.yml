@@ -24,10 +24,14 @@ jobs:
         run: go vet ./...
       - name: test
         run: go test ./...
-      - name: buf lint
-        uses: bufbuild/buf-lint-action@v1
+      - name: buf setup
+        uses: bufbuild/buf-setup-action@v1
         with:
-          input: backend
+          version: "1.75.0"
+      - name: buf deps
+        run: buf dep update
+      - name: buf lint
+        run: buf lint
 
   frontend:
     runs-on: ubuntu-latest
