@@ -28,6 +28,18 @@
     {
       "path": "pages/portal/student",
       "style": { "navigationBarTitleText": "学员详情" }
+    },
+    {
+      "path": "pages/portal/tasks/index",
+      "style": { "navigationBarTitleText": "我的任务" }
+    },
+    {
+      "path": "pages/portal/tasks/detail",
+      "style": { "navigationBarTitleText": "任务详情" }
+    },
+    {
+      "path": "pages/portal/archive",
+      "style": { "navigationBarTitleText": "作业档案" }
     }
   ],
   "subPackages": [
@@ -61,6 +73,18 @@
         {
           "path": "pages/import/index",
           "style": { "navigationBarTitleText": "导入学员" }
+        },
+        {
+          "path": "pages/tasks/index",
+          "style": { "navigationBarTitleText": "任务" }
+        },
+        {
+          "path": "pages/task/index",
+          "style": { "navigationBarTitleText": "任务详情" }
+        },
+        {
+          "path": "pages/reviews/index",
+          "style": { "navigationBarTitleText": "待批阅" }
         }
       ]
     }

@@ -154,15 +154,15 @@ backend/
 #### 3.2.1 任务
 
 - 字段：标题、说明、类型（`homework` / `exam_correction` / `trial` / `checkin`）、截止时间、状态、附件（≤10 个）、创建人、发布时间。
-- 状态机：`draft → ongoing → closed → archived`。`draft` 可编辑；`ongoing` 仅允许改说明/追加附件；`closed` 只读。
-- 发布校验：至少一个下发对象；`due_at` 必须晚于当前时间；附件必须已完成上传。
-- 下发对象解析优先级：显式 `student_ids` > `group` > `tag_ids`。按分组/标签解析时排除 `archived` / `churned`。
-- **一人一条** `task_assignments`，快照 `student_id`、`guardian_id`、`due_at`、`status=pending`。单次发布上限 500 人，超过走异步任务。
-- 发布与生成记录在同一事务；提交后触发 AF-01。
+- 状态机：`draft → published → closed`。`draft` 可编辑；`published` 可关闭；`closed` 只读。当前实现不含 `archived`。
+- 发布校验：至少一个下发对象；`due_at` 必须晚于当前时间。
+- 下发对象：当前实现只支持显式 `student_ids`；按分组/标签解析为后续增强。
+- **一人一条** `task_assignments`，快照 `student_id`、`due_at`、`status=pending`。单次发布上限 500 人。
+- 发布与生成记录在同一事务。
 
 #### 3.2.2 提交
 
-- 入口：家长端。支持文字（≤5000 字）、图片（≤9 张，jpg/png/webp）、文件（≤3 个，单文件 ≤30MB）。
+- 入口：家长端。当前实现支持文字（≤5000 字）+ 图片（≤9 张，先 `wx.cloud.uploadFile` 得 fileID）。独立文件附件、批改图片为后续增强。
 - 截止后仍可提交，标记 `is_late=true`，不阻断。
 - 每次提交生成一条 `submissions`（`attempt_no` 递增），作业记录状态置 `submitted`；保留历史 attempt，老师默认看最新，可展开历史。
 - 已批阅（`reviewed`）后不允许再提交；`returned` 可重交。
@@ -189,9 +189,9 @@ backend/
 
 #### 3.2.5 模板与档案
 
-- 模板保存标题、说明、类型、附件、默认截止偏移（小时），复用时只选对象与时间。
-- 学员作业档案：按学员聚合全部 assignment + submissions + 批阅结果，分页按任务发布时间倒序。
-- 导出：逾期名单、提交名单（§3.9）。
+- 模板保存标题、说明、类型、默认截止偏移（1~720 小时），复用时只选对象与截止时间；当前实现为 `task_templates` 表 + 教师端模板选择/存为模板。
+- 学员作业档案：家长端 `/api/v1/portal/archive` 已实现（按任务发布时间倒序）；教师端按学员聚合为后续增强。
+- 导出：逾期名单、提交名单为后续增强（xlsx job）。
 
 ### 3.3 M3 一对一预约排课
 
@@ -470,7 +470,7 @@ backend/
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
 
-> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`。表中其余接口为规划，尚未实现，前端不得假设可用。
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 
@@ -500,17 +500,17 @@ backend/
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET/POST | `/api/v1/tasks` | 列表 / 建草稿 |
-| GET/PATCH | `/api/v1/tasks/{id}` | 详情 / 编辑（限草稿） |
+| GET | `/api/v1/tasks/{id}` | 详情 + 统计 + 逐份作业 |
 | POST | `/api/v1/tasks/{id}/publish` | 发布并生成 assignment |
 | POST | `/api/v1/tasks/{id}/close` | 截止 |
-| GET | `/api/v1/tasks/{id}/assignments` | 名单/状态 |
-| GET | `/api/v1/tasks/{id}/stats` | 统计 |
-| GET | `/api/v1/assignments` | 批阅工作台（跨任务） |
-| GET | `/api/v1/assignments/{id}` | 详情（含历史提交） |
-| POST | `/api/v1/assignments/{id}/review` | 批阅通过 |
-| POST | `/api/v1/assignments/{id}/return` | 打回（必填理由） |
-| GET/POST | `/api/v1/task-templates` | 模板 |
+| GET | `/api/v1/reviews` | 待批阅队列（跨任务） |
+| POST | `/api/v1/assignments/{id}/review` | 批阅 / 打回（`return_reason` 非空即打回） |
+| GET/POST | `/api/v1/task-templates` | 模板列表 / 新建 |
 | PATCH/DELETE | `/api/v1/task-templates/{id}` | 模板维护 |
+| GET | `/api/v1/portal/tasks` | 家长任务列表 |
+| GET | `/api/v1/portal/tasks/{id}` | 家长任务详情 + 历史提交 |
+| POST | `/api/v1/portal/tasks/{id}/submit` | 家长提交/重交 |
+| GET | `/api/v1/portal/archive` | 家长作业档案 |
 
 #### 预约 / 时段
 

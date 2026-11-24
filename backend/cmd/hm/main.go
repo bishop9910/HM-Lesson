@@ -78,6 +78,23 @@ func main() {
 	router.POST("/api/v1/imports/{id}/commit", authSrv.CommitStudentsImport)
 	router.POST("/api/v1/imports/{id}/rollback", authSrv.RollbackImportBatch)
 
+	// M3：任务下发、提交、批阅与作业档案。
+	router.GET("/api/v1/tasks", authSrv.ListTasks)
+	router.POST("/api/v1/tasks", authSrv.CreateTask)
+	router.GET("/api/v1/tasks/{id}", authSrv.GetTask)
+	router.POST("/api/v1/tasks/{id}/publish", authSrv.PublishTask)
+	router.POST("/api/v1/tasks/{id}/close", authSrv.CloseTask)
+	router.GET("/api/v1/reviews", authSrv.ReviewQueue)
+	router.GET("/api/v1/task-templates", authSrv.ListTemplates)
+	router.POST("/api/v1/task-templates", authSrv.CreateTemplate)
+	router.PATCH("/api/v1/task-templates/{id}", authSrv.UpdateTemplate)
+	router.DELETE("/api/v1/task-templates/{id}", authSrv.DeleteTemplate)
+	router.POST("/api/v1/assignments/{id}/review", authSrv.ReviewAssignment)
+	router.GET("/api/v1/portal/tasks", authSrv.PortalTasks)
+	router.GET("/api/v1/portal/tasks/{id}", authSrv.PortalTask)
+	router.POST("/api/v1/portal/tasks/{id}/submit", authSrv.PortalSubmit)
+	router.GET("/api/v1/portal/archive", authSrv.PortalArchive)
+
 	app := kratos.New(
 		kratos.Name("hm-api"),
 		kratos.Version(version.Version),
@@ -93,7 +110,7 @@ func main() {
 func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm.DB) {
 	if cfg.DBDSN == "" {
 		logger.Warn("HM_DB_DSN 未配置，仅健康检查可用；登录/成员接口返回 503")
-		return service.New(nil, nil, nil, nil, nil, nil), nil
+		return service.New(nil, nil, nil, nil, nil, nil, nil), nil
 	}
 	db, err := data.Open(cfg.DBDSN)
 	if err != nil {
@@ -126,7 +143,8 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm
 	bind := biz.NewBindUsecase(data.NewGuardianRepo(db))
 	crm := biz.NewCRMUsecase(data.NewCRMRepo(db))
 	importUC := biz.NewImportUsecase(data.NewImportRepo(db))
-	return service.New(uc, dashboard, bind, crm, importUC, issuer), db
+	tasks := biz.NewTaskUsecase(data.NewTaskRepo(db))
+	return service.New(uc, dashboard, bind, crm, importUC, tasks, issuer), db
 }
 
 func newLogger(level slog.Level) *slog.Logger {

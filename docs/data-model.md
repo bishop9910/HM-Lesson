@@ -245,13 +245,15 @@ erDiagram
 
 #### `tasks`
 
+> 实际建表以 `backend/migrations/000002_teaching.up.sql`、`000004_task_templates.up.sql` 为准。下表为逻辑模型；`audience_type/audience`、`closed_at`、`version` 等未建列，当前发布只接收显式 `student_ids`。
+
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | id | uuid | PK | |
 | title | varchar(200) | NOT NULL | |
 | description | text | NULL | |
-| type | text | CHECK IN ('homework','exam_correction','trial','checkin') | |
-| status | text | NOT NULL DEFAULT 'draft', CHECK IN ('draft','ongoing','closed','archived') | |
+| type | text | CHECK IN ('homework','correction','trial','checkin') | |
+| status | text | NOT NULL DEFAULT 'draft', CHECK IN ('draft','published','closed') | |
 | due_at | timestamptz | NOT NULL | |
 | audience_type | text | CHECK IN ('students','group','tags') | |
 | audience | jsonb | NOT NULL | 快照：`{student_ids:[]}` / `{group:"class"}` / `{tag_ids:[]}` |
@@ -265,9 +267,11 @@ erDiagram
 
 #### `task_templates`
 
-`id`、`title`、`description`、`type`、`default_due_offset_hours int`、`created_by`、`created_at/updated_at`。
+`id`、`title`、`description`、`type`、`due_offset_hours int`、`created_by`、`created_at/updated_at`（`000004_task_templates.up.sql`）。
 
 #### `task_assignments`
+
+> 当前实际表只有 `id/task_id/student_id/status/submitted_at/reviewed_at/score/comment/return_reason/created_at/updated_at`；`guardian_id`、`reviewed_by`、`attempt_count`、`version` 未建列。
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
@@ -298,13 +302,13 @@ erDiagram
 | --- | --- | --- | --- |
 | id | uuid | PK | |
 | assignment_id | uuid | NOT NULL FK task_assignments(id) | |
-| attempt_no | int | NOT NULL | 从 1 递增 |
+| version | int | NOT NULL | 从 1 递增（实际列名 `version`） |
 | text_content | text | NULL | ≤5000 字 |
 | is_late | boolean | NOT NULL DEFAULT false | |
 | submitted_by | uuid | NOT NULL FK guardians(id) | |
 | submitted_at | timestamptz | NOT NULL DEFAULT now() | |
 
-约束：`UNIQUE (assignment_id, attempt_no)`；索引 `idx_submissions_assignment`。
+约束：`UNIQUE (assignment_id, version)`；索引 `idx_submissions_submitted_at`。
 附件：通过 `file_links`（`target_type='submission'`）。
 
 #### `file_links` 通用附件关联

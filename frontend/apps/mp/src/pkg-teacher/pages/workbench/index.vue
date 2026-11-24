@@ -77,6 +77,14 @@ function goImport(): void {
   uni.navigateTo({ url: "/pkg-teacher/pages/import/index" });
 }
 
+function goTasks(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/tasks/index" });
+}
+
+function goReviews(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/reviews/index" });
+}
+
 function logout(): void {
   session.clear();
   uni.reLaunch({ url: "/pages/index/index" });
@@ -99,6 +107,8 @@ function logout(): void {
     </view>
 
     <view class="tools">
+      <button class="primary" @click="goTasks">任务与作业</button>
+      <button class="ghost" @click="goReviews">待批阅</button>
       <button class="primary" @click="goStudents">学员档案</button>
       <button v-if="session.isOwner" class="ghost" @click="goGuardians">绑定审批</button>
       <button v-if="session.isOwner" class="ghost" @click="goImport">导入学员</button>

@@ -69,6 +69,14 @@ function goHome(): void {
 function openStudent(id: string): void {
   uni.navigateTo({ url: `/pages/portal/student?id=${encodeURIComponent(id)}` });
 }
+
+function goTasks(): void {
+  uni.navigateTo({ url: "/pages/portal/tasks/index" });
+}
+
+function goArchive(): void {
+  uni.navigateTo({ url: "/pages/portal/archive" });
+}
 </script>
 
 <template>
@@ -113,6 +121,11 @@ function openStudent(id: string): void {
         <text class="meta">{{ student.grade }} · {{ student.school || "未填学校" }}</text>
       </view>
 
+      <view class="quick">
+        <button class="ghost" @click="goTasks">我的任务</button>
+        <button class="ghost" @click="goArchive">作业档案</button>
+      </view>
+
       <button class="ghost" @click="goHome">回到首页</button>
     </template>
   </view>
@@ -150,6 +163,16 @@ function openStudent(id: string): void {
 .link {
   font-size: 26rpx;
   color: $hm-muted;
+}
+
+.quick {
+  display: flex;
+  gap: 16rpx;
+  margin: 20rpx 0;
+}
+
+.quick button {
+  flex: 1;
 }
 
 .stats {
