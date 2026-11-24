@@ -182,7 +182,7 @@ function openStudent(id: string): void {
     </view>
 
     <view v-if="creating" class="mask" @click.self="closeCreate">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <text class="sheet-title">新增学员</text>
         <input v-model="form.name" class="field" placeholder="学员姓名" />
         <input v-model="form.grade" class="field" placeholder="年级，如 高一" />

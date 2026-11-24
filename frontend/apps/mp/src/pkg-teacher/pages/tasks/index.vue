@@ -247,7 +247,7 @@ onShow(load);
     </view>
 
     <view v-if="showCreate" class="mask" @tap.self="showCreate = false">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <view class="sheet-head">
           <text class="sheet-title">新建任务</text>
           <text class="close" @tap="showCreate = false">关闭</text>
@@ -287,7 +287,7 @@ onShow(load);
     </view>
 
     <view v-if="showTemplates" class="mask" @tap.self="showTemplates = false">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <view class="sheet-head">
           <text class="sheet-title">任务模板</text>
           <text class="close" @tap="showTemplates = false">关闭</text>

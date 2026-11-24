@@ -301,7 +301,7 @@ function goBack(): void {
     </template>
 
     <view v-if="followOpen" class="mask" @click.self="followOpen = false">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <text class="sheet-title">新增跟进</text>
         <picker :range="methods" range-key="label" @change="onMethodChange">
           <view class="field-row">
@@ -318,7 +318,7 @@ function goBack(): void {
     </view>
 
     <view v-if="editOpen" class="mask" @click.self="editOpen = false">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <text class="sheet-title">编辑档案</text>
         <input v-model="editForm.grade" class="field" placeholder="年级（必填）" />
         <input v-model="editForm.school" class="field" placeholder="学校" />

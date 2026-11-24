@@ -212,7 +212,7 @@ onLoad((options) => {
     </template>
 
     <view v-if="active" class="mask" @tap.self="active = null">
-      <view class="sheet">
+      <view class="sheet" @click.stop>
         <view class="sheet-head">
           <text class="sheet-title">批阅 · {{ active.student_name }}</text>
           <text class="close" @tap="active = null">关闭</text>
