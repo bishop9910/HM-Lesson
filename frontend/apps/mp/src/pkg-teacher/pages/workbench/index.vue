@@ -34,7 +34,11 @@ async function load(): Promise<void> {
   loading.value = true;
   errorText.value = "";
   try {
-    await request("/api/v1/auth/me", "GET");
+    const ok = await session.refresh();
+    if (!ok && !session.token) {
+      uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
+      return;
+    }
     const res = await request<{ summary: Summary }>("/api/v1/dashboard/summary", "GET");
     summary.value = res.summary;
   } catch (err) {

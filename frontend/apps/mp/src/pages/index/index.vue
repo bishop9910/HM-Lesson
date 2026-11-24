@@ -16,6 +16,7 @@ const session = useSessionStore();
 const summary = ref<Summary | null>(null);
 const loading = ref(false);
 const hasGuardian = ref(false);
+const identityReady = ref(!session.token);
 
 const sysInfo = uni.getSystemInfoSync();
 const statusBarHeight = sysInfo.statusBarHeight ?? 20;
@@ -42,6 +43,7 @@ const todoCount = computed(() => {
 
 const greeting = computed(() => {
   if (!session.isTeacher) return "家长您好";
+  if (!identityReady.value) return "老师，正在同步…";
   const name = session.staffName || "老师";
   return summary.value ? `${name}，今天有 ${todoCount.value} 项待办` : name;
 });
@@ -76,7 +78,13 @@ async function loadSummary(): Promise<void> {
 
 onShow(() => {
   hasGuardian.value = Boolean(uni.getStorageSync("hm_guardian_token"));
-  void loadSummary();
+  void (async () => {
+    if (session.isTeacher) {
+      await session.refresh();
+    }
+    identityReady.value = true;
+    await loadSummary();
+  })();
 });
 
 function goBind(): void {
