@@ -23,7 +23,7 @@ func (r *dashboardRepo) Summary(ctx context.Context) (biz.DashboardSummary, erro
 	row := r.db.WithContext(ctx).Raw(`
 SELECT
   (SELECT COUNT(*) FROM students) AS students_total,
-  (SELECT COUNT(*) FROM submissions WHERE status = 'submitted') AS submissions_pending,
+  (SELECT COUNT(*) FROM task_assignments WHERE status = 'submitted') AS submissions_pending,
   (SELECT COUNT(*) FROM bookings WHERE status = 'pending') AS bookings_pending,
   (SELECT COUNT(*) FROM lesson_accounts WHERE balance_hours <= 2) AS low_balance_students,
   (SELECT COUNT(*) FROM staff WHERE status = 'active') AS staff_total

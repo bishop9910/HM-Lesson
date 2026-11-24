@@ -32,6 +32,10 @@
 | 2026-11-24 | 云托管部署 | GitHub 仓库绑定 → 构建镜像 → 启动 `hm-lesson-003` | **通过** | 运行镜像 Debian 12；服务 `hm-lesson`，环境 `prod-d8gq8vzftc39caa5b` |
 | 2026-11-24 | 云托管健康检查 | `GET /healthz`、`GET /readyz` | **通过** | 返回 `{"status":"ok","version":"0.1.0"}`、`{"status":"ready"}` |
 | 2026-11-24 | 云托管登录 | `POST /api/v1/auth/login` | **通过** | 返回 `staff.role=owner`、`staff.status=active`、JWT；`expires_at=2026-11-24T11:37:24Z`（2h） |
+| 2026-11-24 | 临时公网 URL 复测 | `GET /healthz`、`/readyz`、`POST /auth/login` | **通过** | `hm-lesson-353410-10-1540142477.sh.run.tcloudbase.com`：200/200/200；owner 登录成功 |
+| 2026-11-24 | 公网 401 守卫 | 无 token 访问 students/guardians/imports | **通过** | 均返回 401 `UNAUTHORIZED`；带 token 后 staff 列表正常 |
+| 2026-11-24 | 公网 Excel 导入全链路 | template → preview → commit → students → rollback | **通过** | 模板 8,552 字符 base64；1 行预览 `to_create=1`；提交 `created_rows=1`；学员列表可查；回滚后列表为空 |
+| 2026-11-24 | 公网 dashboard | `GET /api/v1/dashboard/summary` | **失败** | 500 `读取汇总失败`；根因 SQL 查了 `submissions.status`（该表无 status，应为 `task_assignments.status='submitted'`）；已在本机修复，待推送部署复测 |
 | 2026-11-24 | 首页/工作台接入真实汇总 | `GET /api/v1/dashboard/summary` | **通过（构建）** | 后端查询 `students/submissions/bookings/lesson_accounts/staff` 真实计数；前端 `vue-tsc` 与 `uni build` 通过；云托管接口待下次部署后验证 |
 | 2026-11-24 | 家长绑定申请落库 | `POST /api/v1/auth/bind-request` | **通过（单测）** | `internal/biz` 覆盖手机号校验、空仓库；真实云托管待部署后验证 |
 | 2026-11-24 | M2 CRM 后端 | `gofmt -l`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` | **通过** | 新增 `internal/biz/crm.go`、`internal/data/crm.go`、`internal/service/crm.go`；编译/静态检查/既有测试通过；CRM 尚无专门单测 |
@@ -77,6 +81,7 @@
 | D-01 | `vue-tsc` 报 `uni.request` 不接受 `PATCH` 与 `unknown` data | 低 | 已修复 | `uni.request` 类型不含 PATCH；H5 调试降级为 POST + `X-HTTP-Method-Override`，data 收窄为 `RequestData` |
 | D-02 | `uni build -p mp-weixin` 报 `Rollup failed to resolve import "nostics" from pinia` | 中 | 已修复 | pinia 4.1.0 的传递依赖在 pnpm 符号链接布局下未被 Rollup 解析；将 `nostics@1.4.0` 加为小程序直接依赖并补 `pnpm-lock.yaml`；本地已用 Junction 验证构建，正式链接需在 `frontend/` 跑一次 `pnpm install` |
 | D-03 | Sass 报 `@import` 与 legacy JS API 弃用 | 低 | 待处理 | 迁移到 `@use` 需改 tokens 与各页面引用；不影响构建，排入 M2 |
+| D-04 | 公网 `GET /api/v1/dashboard/summary` 返回 500 | 高 | 已修复，待部署 | 查询误用 `submissions.status`（`submissions` 无 status 列），改为 `task_assignments.status='submitted'`；本机 `go build/vet/test` 通过，需推送后复测 |
 
 
 
