@@ -9,7 +9,7 @@
 | --- | --- |
 | 开发机 | Windows，Go 1.25.7，Node 22，pnpm 12 |
 | 集成环境 | Debian/CI（Docker 在 Debian/CI；本机不装 Docker） |
-| 数据库 | **MySQL 8.0**：本地 Docker 容器 / 生产云托管（Q22 已确认） |
+| 数据库 | **MySQL 5.7.18**：本地 Docker 容器 / 生产云托管（Q22 已确认） |
 | 对象存储 | 生产：云托管 COS（fileID）；本地 dev：MinIO 容器 |
 | 部署目标 | 微信云托管（上海，单服务 `hm-api`，`min=max=1`） |
 
@@ -28,6 +28,7 @@
 | 2026-11-23 | 前端类型检查 | `node_modules/.bin/vue-tsc --noEmit -p tsconfig.json` | **通过** | 新增教师登录/成员管理页后退出码 0 |
 | 2026-11-23 | 小程序构建 | `node_modules/.bin/uni build -p mp-weixin` | **通过** | 新增 login/staff 分包页后构建成功；仅 Sass `@import`/legacy 告警 |
 | 2026-11-24 | 迁移执行器单测 | `go test ./... -count=1` | **通过** | 新增 `internal/data` 的 `TestLoadMigrations`（2 个版本、up/down 成对）与 `TestSplitSQL`；biz/conf/password/token 同时通过；未连 MySQL |
+| 2026-11-24 | MySQL 5.7.18 兼容调整 | `gofmt -l`、`go build/vet/test`、Linux amd64 交叉构建 | **通过** | 仅代码/单元与构建；真实 5.7.18 上执行迁移仍未验证（待云托管首次启动） |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移 | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；待 Debian/CI 或云托管 dev |
 
@@ -56,7 +57,7 @@
 ## 4. 未执行原因与计划
 
 1. M1 只有健康检查、多老师认证单测与前端骨架；业务用例（TC-01~TC-17）需等 M2 起实现。
-2. 本机无 Docker，版本化迁移实测与集成测试在 Debian/CI 上执行（Q16）；数据库已确认 MySQL 8.0。
+2. 本机无 Docker，版本化迁移实测与集成测试在 Debian/CI 上执行（Q16）；数据库已确认 MySQL 5.7.18。
 3. 云托管契约测试（100 KiB/1000 KiB/15 s、fileID、WS 首帧认证）需真实云环境或 mock 网关，待云托管 dev 环境建立后接入。
 
 ## 5. 缺陷记录

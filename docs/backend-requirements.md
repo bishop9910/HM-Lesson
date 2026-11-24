@@ -1,7 +1,7 @@
 ﻿# 后端需求规格 · HM-Lesson
 
 > 对应业务蓝本：[`鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx`](<鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx>)（下称“蓝本”）
-> 技术基线：Go 1.25+ / Kratos v3 / 微信云托管（上海，单服务 `hm-api`）/ MySQL 8.0（本地容器 / 生产云托管，Q22 已确认）/ 云托管对象存储（COS/fileID，生产；本地 MinIO）/ 一期不用 Redis（Q24）
+> 技术基线：Go 1.25+ / Kratos v3 / 微信云托管（上海，单服务 `hm-api`）/ MySQL 5.7.18（本地容器 / 生产云托管，Q22 已确认）/ 云托管对象存储（COS/fileID，生产；本地 MinIO）/ 一期不用 Redis（Q24）
 > 读者：后端开发、测试、后续接手的 AI Agent
 > 关联：[README](../README.md) · [data-model.md](data-model.md) · [frontend-requirements.md](frontend-requirements.md) · [deploy-wechat-cloudrun.md](deploy-wechat-cloudrun.md) · [open-questions.md](open-questions.md)
 
@@ -51,7 +51,7 @@
 | --- | --- | --- | --- |
 | `hm` | `cmd/hm` | HTTP/JSON + WebSocket + 内嵌 job 调度；启动时 `data.Migrate` 版本化迁移；同步业务与定时任务同进程 | MVP `min=max=1`；扩容前必须补分布式锁 |
 
-> 不引入消息队列。Outbox 表 + 行锁/状态机足够支撑本项目量级；`FOR UPDATE SKIP LOCKED` 在 MySQL 8.0 与 PG 均可用。长任务（导出、批量通知）落 `jobs`，由内嵌调度器或请求内分片推进，**不依赖请求返回后的 goroutine**。
+> 不引入消息队列。Outbox 表 + 行锁/状态机足够支撑本项目量级；`FOR UPDATE SKIP LOCKED` 在 MySQL 5.7.18 与 PG 均可用。长任务（导出、批量通知）落 `jobs`，由内嵌调度器或请求内分片推进，**不依赖请求返回后的 goroutine**。
 
 ### 2.2 目录约定（Kratos v3）
 
@@ -604,7 +604,7 @@ server:
   shutdown_timeout: 15s
 data:
   database:
-    driver: mysql              # 固定 MySQL 8.0（Q22 已确认）
+    driver: mysql              # 固定 MySQL 5.7.18（Q22 已确认）
     source: ${HM_DB_DSN}
     max_open: 20
     max_idle: 10
@@ -695,7 +695,7 @@ rules:
 ## 11. 测试策略与质量门禁
 
 - **单元测试**：`biz` 层覆盖率 ≥70%；状态机、余额计算、权限判定必须表驱动。
-- **集成测试**：testcontainers-go 起 MySQL 8.0 + MinIO 本地适配器；存储用本地适配器，云存储只做契约测试；每个测试独立 schema 或事务回滚；空库 up/down/up 必须通过。**本机无 Docker**：集成测试在 Debian/CI 上跑，Windows 只跑单元/契约测试。
+- **集成测试**：testcontainers-go 起 MySQL 5.7.18 + MinIO 本地适配器；存储用本地适配器，云存储只做契约测试；每个测试独立 schema 或事务回滚；空库 up/down/up 必须通过。**本机无 Docker**：集成测试在 Debian/CI 上跑，Windows 只跑单元/契约测试。
 - **并发测试**：同槽位 20 并发提交、消课 10 并发、重复幂等键。
 - **契约测试**：`buf lint` + `buf breaking`；OpenAPI diff 需人工确认；`callContainer` 请求/响应大小与 15 s 超时边界。
 - **云托管测试**：网关注入 header 解析、WS 首帧认证、fileID 上传/下载、关闭公网后不可直连、冷启动健康检查。

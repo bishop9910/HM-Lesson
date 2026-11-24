@@ -1,6 +1,7 @@
-﻿-- 000002_teaching：跟进、任务作业、预约、课时、班课、资料、通知（MySQL 8.0）
+-- 000002_teaching：跟进、任务作业、预约、课时、班课、资料、通知（MySQL 5.7.8+ / 8.0）
+-- 预上线首次部署：CREATE TABLE IF NOT EXISTS 便于失败重试；上线后新增迁移不得用它掩盖结构漂移。
 
-CREATE TABLE follow_ups (
+CREATE TABLE IF NOT EXISTS follow_ups (
   id char(36) NOT NULL,
   student_id char(36) NOT NULL,
   method varchar(16) NOT NULL,
@@ -16,9 +17,9 @@ CREATE TABLE follow_ups (
   CONSTRAINT ck_follow_ups_method CHECK (method IN ('wechat','phone','offline','other')),
   CONSTRAINT fk_follow_ups_student FOREIGN KEY (student_id) REFERENCES students (id),
   CONSTRAINT fk_follow_ups_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
   id char(36) NOT NULL,
   title varchar(128) NOT NULL,
   description varchar(2000) NOT NULL DEFAULT '',
@@ -35,9 +36,9 @@ CREATE TABLE tasks (
   CONSTRAINT ck_tasks_type CHECK (type IN ('homework','correction','trial','checkin')),
   CONSTRAINT ck_tasks_status CHECK (status IN ('draft','published','closed')),
   CONSTRAINT fk_tasks_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE task_assignments (
+CREATE TABLE IF NOT EXISTS task_assignments (
   id char(36) NOT NULL,
   task_id char(36) NOT NULL,
   student_id char(36) NOT NULL,
@@ -55,9 +56,9 @@ CREATE TABLE task_assignments (
   CONSTRAINT ck_task_assignments_status CHECK (status IN ('pending','submitted','reviewed','returned')),
   CONSTRAINT fk_task_assignments_task FOREIGN KEY (task_id) REFERENCES tasks (id),
   CONSTRAINT fk_task_assignments_student FOREIGN KEY (student_id) REFERENCES students (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE submissions (
+CREATE TABLE IF NOT EXISTS submissions (
   id char(36) NOT NULL,
   assignment_id char(36) NOT NULL,
   version int NOT NULL DEFAULT 1,
@@ -71,9 +72,9 @@ CREATE TABLE submissions (
   KEY idx_submissions_submitted_at (submitted_at),
   CONSTRAINT fk_submissions_assignment FOREIGN KEY (assignment_id) REFERENCES task_assignments (id),
   CONSTRAINT fk_submissions_submitted_by FOREIGN KEY (submitted_by) REFERENCES guardians (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE slots (
+CREATE TABLE IF NOT EXISTS slots (
   id char(36) NOT NULL,
   start_at datetime(3) NOT NULL,
   end_at datetime(3) NOT NULL,
@@ -87,9 +88,9 @@ CREATE TABLE slots (
   KEY idx_slots_status_start (status, start_at),
   CONSTRAINT ck_slots_status CHECK (status IN ('open','locked','completed','canceled')),
   CONSTRAINT fk_slots_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE bookings (
+CREATE TABLE IF NOT EXISTS bookings (
   id char(36) NOT NULL,
   slot_id char(36) NOT NULL,
   student_id char(36) NOT NULL,
@@ -115,9 +116,9 @@ CREATE TABLE bookings (
   CONSTRAINT fk_bookings_student FOREIGN KEY (student_id) REFERENCES students (id),
   CONSTRAINT fk_bookings_guardian FOREIGN KEY (guardian_id) REFERENCES guardians (id),
   CONSTRAINT fk_bookings_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE lesson_accounts (
+CREATE TABLE IF NOT EXISTS lesson_accounts (
   student_id char(36) NOT NULL,
   purchased_hours decimal(6,2) NOT NULL DEFAULT 0,
   balance_hours decimal(6,2) NOT NULL DEFAULT 0,
@@ -128,9 +129,9 @@ CREATE TABLE lesson_accounts (
   updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (student_id),
   CONSTRAINT fk_lesson_accounts_student FOREIGN KEY (student_id) REFERENCES students (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE lesson_ledger (
+CREATE TABLE IF NOT EXISTS lesson_ledger (
   id char(36) NOT NULL,
   student_id char(36) NOT NULL,
   kind varchar(16) NOT NULL,
@@ -147,9 +148,9 @@ CREATE TABLE lesson_ledger (
   CONSTRAINT fk_lesson_ledger_student FOREIGN KEY (student_id) REFERENCES students (id),
   CONSTRAINT fk_lesson_ledger_booking FOREIGN KEY (booking_id) REFERENCES bookings (id),
   CONSTRAINT fk_lesson_ledger_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE classes (
+CREATE TABLE IF NOT EXISTS classes (
   id char(36) NOT NULL,
   name varchar(128) NOT NULL,
   subject varchar(32) NOT NULL DEFAULT 'physics',
@@ -164,9 +165,9 @@ CREATE TABLE classes (
   KEY idx_classes_status (status),
   CONSTRAINT ck_classes_status CHECK (status IN ('active','archived')),
   CONSTRAINT fk_classes_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE class_members (
+CREATE TABLE IF NOT EXISTS class_members (
   id char(36) NOT NULL,
   class_id char(36) NOT NULL,
   student_id char(36) NOT NULL,
@@ -178,9 +179,9 @@ CREATE TABLE class_members (
   KEY idx_class_members_student (student_id),
   CONSTRAINT fk_class_members_class FOREIGN KEY (class_id) REFERENCES classes (id),
   CONSTRAINT fk_class_members_student FOREIGN KEY (student_id) REFERENCES students (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE class_sessions (
+CREATE TABLE IF NOT EXISTS class_sessions (
   id char(36) NOT NULL,
   class_id char(36) NOT NULL,
   session_date date NOT NULL,
@@ -192,9 +193,9 @@ CREATE TABLE class_sessions (
   KEY idx_class_sessions_class_date (class_id, session_date),
   CONSTRAINT fk_class_sessions_class FOREIGN KEY (class_id) REFERENCES classes (id),
   CONSTRAINT fk_class_sessions_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE materials (
+CREATE TABLE IF NOT EXISTS materials (
   id char(36) NOT NULL,
   title varchar(255) NOT NULL,
   category varchar(32) NOT NULL,
@@ -209,9 +210,9 @@ CREATE TABLE materials (
   CONSTRAINT ck_materials_category CHECK (category IN ('class_handout','one_on_one','exam','trial','enrollment')),
   CONSTRAINT fk_materials_file FOREIGN KEY (file_id) REFERENCES files (id),
   CONSTRAINT fk_materials_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE notices (
+CREATE TABLE IF NOT EXISTS notices (
   id char(36) NOT NULL,
   title varchar(128) NOT NULL,
   body varchar(5000) NOT NULL,
@@ -226,9 +227,9 @@ CREATE TABLE notices (
   KEY idx_notices_status_sent (status, sent_at),
   CONSTRAINT ck_notices_status CHECK (status IN ('draft','sent')),
   CONSTRAINT fk_notices_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE notice_receipts (
+CREATE TABLE IF NOT EXISTS notice_receipts (
   id char(36) NOT NULL,
   notice_id char(36) NOT NULL,
   guardian_id char(36) NOT NULL,
@@ -242,4 +243,4 @@ CREATE TABLE notice_receipts (
   CONSTRAINT ck_notice_receipts_status CHECK (status IN ('pending','confirmed')),
   CONSTRAINT fk_notice_receipts_notice FOREIGN KEY (notice_id) REFERENCES notices (id),
   CONSTRAINT fk_notice_receipts_guardian FOREIGN KEY (guardian_id) REFERENCES guardians (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

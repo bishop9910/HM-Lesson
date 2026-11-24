@@ -1,7 +1,8 @@
-﻿-- 000001_init：账号、学员、家长绑定、文件与运维基础表（MySQL 8.0）
+-- 000001_init：账号、学员、家长绑定、文件与运维基础表（MySQL 5.7.8+ / 8.0）
 -- 约定：id=char(36) UUIDv7；时间 UTC datetime(3)；枚举 text + CHECK；表名全小写。
+-- 预上线首次部署：CREATE TABLE IF NOT EXISTS 便于失败重试；上线后新增迁移不得用它掩盖结构漂移。
 
-CREATE TABLE staff (
+CREATE TABLE IF NOT EXISTS staff (
   id char(36) NOT NULL,
   name varchar(64) NOT NULL,
   phone varchar(32) NOT NULL,
@@ -18,9 +19,9 @@ CREATE TABLE staff (
   CONSTRAINT ck_staff_role CHECK (role IN ('owner','assistant')),
   CONSTRAINT ck_staff_status CHECK (status IN ('active','disabled')),
   CONSTRAINT fk_staff_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE students (
+CREATE TABLE IF NOT EXISTS students (
   id char(36) NOT NULL,
   name varchar(64) NOT NULL,
   grade varchar(16) NOT NULL,
@@ -41,9 +42,9 @@ CREATE TABLE students (
   CONSTRAINT ck_students_group CHECK (group_code IN ('class_active','one_on_one','intent','visitor')),
   CONSTRAINT ck_students_status CHECK (status IN ('active','graduated','lost')),
   CONSTRAINT fk_students_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE guardians (
+CREATE TABLE IF NOT EXISTS guardians (
   id char(36) NOT NULL,
   openid varchar(64) NULL,
   unionid varchar(64) NULL,
@@ -62,9 +63,9 @@ CREATE TABLE guardians (
   KEY idx_guardians_status (status),
   CONSTRAINT ck_guardians_status CHECK (status IN ('pending','active','rejected','disabled')),
   CONSTRAINT fk_guardians_approved_by FOREIGN KEY (approved_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE student_guardians (
+CREATE TABLE IF NOT EXISTS student_guardians (
   id char(36) NOT NULL,
   student_id char(36) NOT NULL,
   guardian_id char(36) NOT NULL,
@@ -76,9 +77,9 @@ CREATE TABLE student_guardians (
   KEY idx_student_guardians_guardian (guardian_id),
   CONSTRAINT fk_student_guardians_student FOREIGN KEY (student_id) REFERENCES students (id),
   CONSTRAINT fk_student_guardians_guardian FOREIGN KEY (guardian_id) REFERENCES guardians (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE binding_codes (
+CREATE TABLE IF NOT EXISTS binding_codes (
   id char(36) NOT NULL,
   code char(6) NOT NULL,
   student_id char(36) NOT NULL,
@@ -94,9 +95,9 @@ CREATE TABLE binding_codes (
   CONSTRAINT fk_binding_codes_student FOREIGN KEY (student_id) REFERENCES students (id),
   CONSTRAINT fk_binding_codes_created_by FOREIGN KEY (created_by) REFERENCES staff (id),
   CONSTRAINT fk_binding_codes_used_by FOREIGN KEY (used_by_guardian_id) REFERENCES guardians (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE import_batches (
+CREATE TABLE IF NOT EXISTS import_batches (
   id char(36) NOT NULL,
   kind varchar(32) NOT NULL DEFAULT 'students',
   status varchar(16) NOT NULL DEFAULT 'preview',
@@ -114,9 +115,9 @@ CREATE TABLE import_batches (
   KEY idx_import_batches_created_by (created_by, created_at),
   CONSTRAINT ck_import_batches_status CHECK (status IN ('preview','committed','failed','rolled_back')),
   CONSTRAINT fk_import_batches_created_by FOREIGN KEY (created_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE files (
+CREATE TABLE IF NOT EXISTS files (
   id char(36) NOT NULL,
   provider varchar(16) NOT NULL DEFAULT 'cos',
   object_key varchar(512) NOT NULL,
@@ -135,9 +136,9 @@ CREATE TABLE files (
   KEY idx_files_category (category),
   CONSTRAINT ck_files_provider CHECK (provider IN ('cos','minio','local')),
   CONSTRAINT fk_files_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE download_logs (
+CREATE TABLE IF NOT EXISTS download_logs (
   id char(36) NOT NULL,
   file_id char(36) NOT NULL,
   actor_type varchar(16) NOT NULL,
@@ -148,9 +149,9 @@ CREATE TABLE download_logs (
   KEY idx_download_logs_file (file_id, created_at),
   KEY idx_download_logs_actor (actor_type, actor_id),
   CONSTRAINT ck_download_logs_actor_type CHECK (actor_type IN ('staff','guardian'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
   id char(36) NOT NULL,
   actor_type varchar(16) NOT NULL,
   actor_id char(36) NOT NULL,
@@ -164,9 +165,9 @@ CREATE TABLE audit_logs (
   KEY idx_audit_logs_target (target_type, target_id),
   KEY idx_audit_logs_actor (actor_type, actor_id, created_at),
   CONSTRAINT ck_audit_logs_actor_type CHECK (actor_type IN ('staff','guardian','system'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE jobs (
+CREATE TABLE IF NOT EXISTS jobs (
   id char(36) NOT NULL,
   kind varchar(64) NOT NULL,
   payload json NULL,
@@ -183,9 +184,9 @@ CREATE TABLE jobs (
   KEY idx_jobs_status_run_at (status, run_at),
   KEY idx_jobs_locked_until (locked_until),
   CONSTRAINT ck_jobs_status CHECK (status IN ('pending','running','done','failed','dead'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE outbox (
+CREATE TABLE IF NOT EXISTS outbox (
   id char(36) NOT NULL,
   aggregate_type varchar(32) NOT NULL,
   aggregate_id char(36) NOT NULL,
@@ -199,9 +200,9 @@ CREATE TABLE outbox (
   KEY idx_outbox_status_run_at (status, run_at),
   KEY idx_outbox_aggregate (aggregate_type, aggregate_id),
   CONSTRAINT ck_outbox_status CHECK (status IN ('pending','done','failed'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE idempotency_keys (
+CREATE TABLE IF NOT EXISTS idempotency_keys (
   id char(36) NOT NULL,
   actor_id char(36) NOT NULL,
   idem_key varchar(128) NOT NULL,
@@ -213,9 +214,9 @@ CREATE TABLE idempotency_keys (
   PRIMARY KEY (id),
   UNIQUE KEY uq_idempotency_actor_key (actor_id, idem_key),
   KEY idx_idempotency_expires (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE token_denylist (
+CREATE TABLE IF NOT EXISTS token_denylist (
   id char(36) NOT NULL,
   token_hash char(64) NOT NULL,
   expires_at datetime(3) NOT NULL,
@@ -223,13 +224,13 @@ CREATE TABLE token_denylist (
   PRIMARY KEY (id),
   UNIQUE KEY uq_token_denylist_hash (token_hash),
   KEY idx_token_denylist_expires (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
   key_name varchar(64) NOT NULL,
   value_json json NOT NULL,
   updated_by char(36) NULL,
   updated_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (key_name),
   CONSTRAINT fk_settings_updated_by FOREIGN KEY (updated_by) REFERENCES staff (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,12 +1,12 @@
 # 数据模型与迁移规范 · HM-Lesson
 
 > 配套：[backend-requirements.md](backend-requirements.md) §3 业务规则
-> 目标数据库：**MySQL 8.0**（本地 Docker 容器 / 生产云托管 MySQL，Q22 已确认）
+> 目标数据库：**MySQL 5.7.18**（本地 Docker 容器 / 生产云托管 MySQL，Q22 已确认）
 > 迁移方式：按版本执行 `backend/migrations/*.sql`（成对 up/down），启动时 `data.Migrate` 加锁执行（ADR-003）
 > 原则：**约束优先于代码**——能在数据库层表达的（唯一、外键、检查、唯一索引）就不要只写在 Service 里。
 
-> ⚠️ **方言说明（2026-11-22 已确认 MySQL 8.0）**
-> 目标库为 **MySQL 8.0**（本地容器 / 生产云托管）。本文档 §2–§12 的字段表沿用 PostgreSQL 类型描述**逻辑模型**（表、字段、语义、状态机不变）；**实际建表语句以 [`backend/migrations/000001_init.up.sql`](../backend/migrations/000001_init.up.sql)、[`000002_teaching.up.sql`](../backend/migrations/000002_teaching.up.sql) 为准**，已按 MySQL 方言编写，down 脚本随版本成对提供。两种方言的映射见 §1.1；新增脚本一律用 MySQL 语法，不要再照抄 PG 类型。
+> ⚠️ **方言说明（2026-11-22 已确认 MySQL 5.7.18）**
+> 目标库为 **MySQL 5.7.18**（本地容器 / 生产云托管）。本文档 §2–§12 的字段表沿用 PostgreSQL 类型描述**逻辑模型**（表、字段、语义、状态机不变）；**实际建表语句以 [`backend/migrations/000001_init.up.sql`](../backend/migrations/000001_init.up.sql)、[`000002_teaching.up.sql`](../backend/migrations/000002_teaching.up.sql) 为准**，已按 MySQL 方言编写，down 脚本随版本成对提供。两种方言的映射见 §1.1；新增脚本一律用 MySQL 语法，不要再照抄 PG 类型。
 
 ---
 
@@ -24,26 +24,26 @@
 | 乐观锁 | `version integer NOT NULL DEFAULT 1` | 批阅/审核/编辑并发 |
 | 审计列 | `created_at`、`updated_at`、`created_by`、`updated_by` | 追溯 |
 | 命名 | 表复数 `snake_case`，**全小写**（MySQL `lower_case_table_names` 建库后不可改）；索引 `idx_表_列`；唯一 `uq_`；外键 `fk_` | 可读、跨方言 |
-| 字符集 | PG UTF8；MySQL `utf8mb4` + `utf8mb4_0900_ai_ci` | 支持 emoji、排序稳定 |
+| 字符集 | PG UTF8；MySQL `utf8mb4` + `utf8mb4_unicode_ci` | 支持 emoji、排序稳定 |
 | 扩展 | PG `pgcrypto`、`btree_gist`；MySQL 无扩展，时段排他用应用事务 | 方言差异 |
 
 > 所有 UUID 由后端生成，数据库不设默认值，避免应用与 DB 行为不一致。
 
-### 1.1 方言映射（Q22 已定：MySQL 8.0）
+### 1.1 方言映射（Q22 已定：MySQL 5.7.18）
 
-| 逻辑 | PostgreSQL 17（不采用，仅对照） | MySQL 8.0（目标库） |
+| 逻辑 | PostgreSQL 17（不采用，仅对照） | MySQL 5.7.18（目标库） |
 | --- | --- | --- |
 | UUID 主键 | `uuid` | `char(36)`，`ascii_bin`/`utf8mb4_bin` 排序 |
 | 时间 | `timestamptz` | `datetime(3)`，连接 `loc=UTC` |
 | JSON | `jsonb` | `json`（不依赖 JSON 路径索引） |
 | 金额/课时 | `numeric(12,2)` | `decimal(12,2)` |
 | 布尔 | `boolean` | `tinyint(1)` |
-| 枚举 | `text + CHECK` | `varchar(32) + CHECK`（8.0.16+ 生效） |
+| 枚举 | `text + CHECK` | `varchar(32) + CHECK`（5.7 解析但忽略，应用层必须校验） |
 | 默认值 | `now()` | `CURRENT_TIMESTAMP(3)` |
 | 自增/返回 | `RETURNING` | `LAST_INSERT_ID()` / 再查 |
 | Upsert | `ON CONFLICT` | `ON DUPLICATE KEY UPDATE` |
 | 部分唯一索引 | `CREATE UNIQUE INDEX ... WHERE status IN (...)` | **不支持**：生成列 `active_flag` + `UNIQUE(slot_id, active_flag)` |
-| 字符串匹配 | `ILIKE` | `LIKE` + `utf8mb4_0900_ai_ci`（大小写不敏感） |
+| 字符串匹配 | `ILIKE` | `LIKE` + `utf8mb4_unicode_ci`（大小写不敏感） |
 | 聚合过滤 | `FILTER (WHERE ...)` | `SUM(CASE WHEN ... THEN ... END)` |
 | 锁 | `pg_advisory_lock` | `GET_LOCK('name', seconds)` |
 | 行锁跳过 | `FOR UPDATE SKIP LOCKED` | `FOR UPDATE SKIP LOCKED`（8.0 支持） |

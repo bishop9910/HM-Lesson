@@ -19,7 +19,7 @@ interface CloudApi {
 
 const cloud = (globalThis as unknown as { wx?: { cloud?: CloudApi } }).wx?.cloud;
 const cloudEnv = import.meta.env.VITE_WX_CLOUD_ENV_ID ?? "";
-const serviceName = "hm-api";
+const serviceName = import.meta.env.VITE_WX_SERVICE ?? "hm-api";
 
 export class ApiError extends Error {
   constructor(

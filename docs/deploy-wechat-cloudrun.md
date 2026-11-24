@@ -1,4 +1,4 @@
-﻿# 微信云托管部署手册 · HM-Lesson
+# 微信云托管部署手册 · HM-Lesson
 
 > 适用：本项目从「Debian + Docker Compose + Caddy」迁移到**微信云托管**。
 > 最后更新：2026-11-22。控制台菜单与 CLI 参数会随平台更新，**以控制台实际生成的命令为准**；本文不写死未验证的 flag。
@@ -44,7 +44,7 @@
         ▼
 微信云托管 · 上海 · 单服务 hm-api（容器端口 80）
         │
-        ├── MySQL 8.0（云托管托管库，Q22 已确认）
+        ├── MySQL 5.7.18（云托管托管库，Q22 已确认）
         ├── 云托管对象存储（COS，fileID）
         └── 可选：腾讯云 Redis（上海，同 VPC）
 ```
@@ -64,7 +64,7 @@
 | 微信云托管 | 已开通，绑定上述 AppID | 未开通 |
 | 腾讯云账号 | 与云托管同主体，已实名 | 待确认 |
 | 镜像仓库 TCR | 腾讯云容器镜像服务，建议上海地域 | 待开通 |
-| 数据库 | **MySQL 8.0**：本地容器 / 生产云托管 | Q22 已确认 |
+| 数据库 | **MySQL 5.7.18**：本地容器 / 生产云托管 | Q22 已确认 |
 | 对象存储 | 生产云托管 COS；本地 MinIO 容器 | Q23 已确认 |
 | Redis | **一期不用**（Q24） | 已确认 |
 | 域名 | 小程序上线**不需要** | 未做 ICP 备案，也不需要；未来自定义域名再办 |
@@ -91,16 +91,16 @@
 
 ---
 
-## 4. 数据库（已定：MySQL 8.0）
+## 4. 数据库（已定：MySQL 5.7.18）
 
-### 4.1 本地开发：Docker Compose MySQL 8.0
+### 4.1 本地开发：Docker Compose MySQL 5.7.18
 
 ```yaml
 # deploy/local/docker-compose.yml（示意）
 services:
   mysql:
-    image: mysql:8.0
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    image: mysql:5.7
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: hm_lesson
@@ -120,9 +120,9 @@ volumes:
 - 本地连接串：`hm:hm_dev_password@tcp(127.0.0.1:3306)/hm_lesson?charset=utf8mb4&parseTime=true&loc=UTC`。
 - 建表与生产共用同一套 `backend/migrations/*.sql`，不维护两套 SQL。
 
-### 4.2 生产：云托管 MySQL 8.0
+### 4.2 生产：云托管 MySQL 5.7.18
 
-- 控制台创建 MySQL 8.0 实例；字符集 **utf8mb4**；库名 `hm_lesson`。
+- 控制台创建 MySQL 5.7.18 实例；字符集 **utf8mb4**；库名 `hm_lesson`。
 - **`lower_case_table_names` 在创建时固定，之后不能改**：建库前决定；本项目表名全小写，两种取值都能跑。
 - 记录连接信息：内网地址、端口、用户名、密码、库名。
 - 生产**关闭“自动暂停”**（或设最小 CCU），避免冷启动报 `CynosDB serverless instance is resuming, please try connecting again.`。
@@ -136,13 +136,13 @@ HM_DB_DRIVER=mysql
 HM_DB_DSN=<user>:<password>@tcp(<host>:3306)/hm_lesson?charset=utf8mb4&parseTime=true&loc=UTC
 ```
 
-### 4.3 方言约定（MySQL 8.0）
+### 4.3 方言约定（MySQL 5.7.18）
 
-- 表名/库名全小写；字符集 `utf8mb4`，排序 `utf8mb4_0900_ai_ci`。
+- 表名/库名全小写；字符集 `utf8mb4`，排序 `utf8mb4_unicode_ci`。
 - `uuid` → `char(36)`；`timestamptz` → `datetime(3)`（UTC 存）；`jsonb` → `json`；`boolean` → `tinyint(1)`。
 - 无部分唯一索引：预约冲突用生成列 `active_flag` + `UNIQUE(slot_id, active_flag)`（见 data-model §1.1）。
 - 无 `RETURNING`/`ON CONFLICT`/`FILTER`/`ILIKE`；用 `LAST_INSERT_ID()`、`ON DUPLICATE KEY`、应用层过滤。
-- `CHECK` 需 8.0.16+；`TEXT` 不能有默认值，需默认值时用 `VARCHAR`。
+- **MySQL 5.7 会解析但忽略 `CHECK`**：枚举/范围校验必须在 Go 侧再做一遍；`TEXT` 不能有默认值，需默认值时用 `VARCHAR`。
 - 不再提供 PostgreSQL 路线；如未来迁移，另开 ADR。
 
 ---
@@ -188,15 +188,22 @@ const res = await wx.cloud.uploadFile({
 | --- | --- | --- |
 | `HM_ENV` | `prod` | 环境标识 |
 | `HM_HTTP_ADDR` | `0.0.0.0:80` | 云托管要求容器监听 80 |
-| `HM_DB_DRIVER` | `mysql` | Q22 已固定 MySQL 8.0 |
-| `HM_DB_DSN` | 见 §4 | 含密码，敏感 |
+| `HM_DB_DRIVER` | `mysql` | Q22 已固定 MySQL 5.7.18 |
+| `HM_DB_DSN` | 见 §4 | 可选；不填则由下面的 `MYSQL_*` 自动拼装 |
+| `MYSQL_ADDRESS` | `10.x.x.x:3306` | 云托管注入；无端口时默认 3306 |
+| `MYSQL_USERNAME` | `hm` | 云托管注入 |
+| `MYSQL_PASSWORD` | `...` | 云托管注入，敏感 |
+| `MYSQL_DATABASE` | `hm_lesson` | 可选；缺省用 `HM_DB_NAME`，再缺省 `hm_lesson` |
+| `HM_DB_NAME` | `hm_lesson` | 可选；云托管未注入库名时使用 |
 | `HM_JWT_SECRET` | 随机 32+ 字节 | 家长/教师 token 签名 |
 | `HM_WX_APP_ID` | `wx...` | 小程序 AppID |
 | `HM_WX_APP_SECRET` | `...` | 仅订阅消息、`code2session` 兜底；callContainer 主路径不需要，能不用就不配 |
 | `HM_WX_TPL_*` | `...` | 订阅消息模板 ID；未配置则只发站内信 |
-| `HM_STORAGE_DRIVER` | `cloud` / `local` | 生产 `cloud` |
-| `HM_STORAGE_BUCKET` | `...` | COS bucket |
-| `HM_STORAGE_REGION` | `ap-shanghai` | 与云托管同地域 |
+| `HM_STORAGE_DRIVER` | `cloud` / `minio` | 有 `COS_BUCKET` 时默认 `cloud` |
+| `HM_STORAGE_BUCKET` | `...` | 可选；缺省用 `COS_BUCKET` |
+| `HM_STORAGE_REGION` | `ap-shanghai` | 可选；缺省用 `COS_REGION` |
+| `COS_BUCKET` | `hm-125...` | 云托管注入；COS 桶名 |
+| `COS_REGION` | `ap-shanghai` | 云托管注入；与云托管同地域 |
 | `HM_REDIS_ADDR` | 空或内网地址 | 不用 Redis 时留空 |
 | `HM_LOG_LEVEL` | `info` | `debug` 仅联调 |
 | `HM_TIMEZONE` | `Asia/Shanghai` | 展示时区；存库仍 UTC |
@@ -204,7 +211,7 @@ const res = await wx.cloud.uploadFile({
 | `HM_BOOTSTRAP_PHONE` | `138...` | 首个 owner 手机号；创建后删除 |
 | `HM_BOOTSTRAP_PASSWORD` | 强密码 | 首个 owner 密码（≥8）；创建后删除并改密 |
 
-> 云托管模板可能自动注入 `CBR_ENV_ID`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_ADDRESS`。可以复用，但业务配置要显式映射，禁止在代码里散落读取。
+> 云托管自动注入 `CBR_ENV_ID`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_ADDRESS`、`COS_BUCKET`、`COS_REGION`。后端 `internal/conf.buildDSN()` 已做兼容：`HM_DB_DSN` 为空时用 `MYSQL_*` 拼 DSN；存储配置缺省时用 `COS_*`。**不要**把这些值再硬编码进 Dockerfile 或仓库。
 
 ---
 
@@ -254,7 +261,19 @@ const res = await wx.cloud.uploadFile({
 
 ## 10. CI/CD（GitHub Actions）
 
-### 10.1 流程
+### 10.1 当前状态（2026-11-24）
+
+**已实现**：`.github/workflows/ci.yml` 跑测试、`buf lint`、构建后端二进制、构建小程序，并上传三个 artifact：
+
+| artifact | 内容 |
+| --- | --- |
+| `hm-api-linux-amd64` | Linux amd64 二进制 + sha256 |
+| `mp-weixin` | 微信小程序构建目录 |
+| `hm-api-image` | `docker save` 的镜像 tar.gz + sha256（仅 push main / 手动触发） |
+
+**尚未实现**：推送 TCR、调用 `wxcloud` 部署、部署后健康检查与自动回滚。下面的流程是目标形态，不是当前行为；当前上线仍按 §9 手动部署。
+
+### 10.2 目标流程（尚未实现）
 
 ```text
 push main
@@ -267,7 +286,7 @@ push main
   → 失败自动回滚上一版本
 ```
 
-### 10.2 Secrets（仓库级）
+### 10.3 Secrets（仓库级）
 
 | Secret | 用途 |
 | --- | --- |
@@ -282,7 +301,7 @@ push main
 - 部署 job 只允许 `main` 分支与手动触发；PR 只跑测试，不部署。
 - 具体 CLI 命令以云托管控制台「持续集成/CLI」生成的为准；本文不写死参数。
 
-### 10.3 回滚
+### 10.4 回滚
 
 - 云托管保留历史版本：控制台回滚到上一版本即可。
 - 数据库结构变更**不自动回滚**：破坏性变更必须向前兼容（先加列、后删列，分两次发布）；预上线可直接删库重建。
@@ -315,6 +334,7 @@ const res = await wx.cloud.callContainer({
 ```
 
 - `path` 必须以 `/` 开头；服务名通过 `header['X-WX-SERVICE']` 指定（示例里的 `hm-api`），不在 path 里写服务名。若环境只有一个服务，省略该 header 通常也能路由；显式写更稳。
+- 前端服务名可用 `VITE_WX_SERVICE` 覆盖，默认 `hm-api`；**它必须等于云托管里真实的服务名**。如果控制台里的服务叫 `golang-073k`，要么新建 `hm-api` 服务，要么构建时把 `VITE_WX_SERVICE` 设为 `golang-073k`。
 - 请求体 ≤100 KiB、响应 ≤1000 KiB、超时 ≤15 s；大文件走 `wx.cloud.uploadFile`。
 - H5 调试才用 `uni.request`；通过条件编译隔离，禁止运行时判断平台后混用。
 
@@ -470,7 +490,7 @@ await api.submitHomework({ taskId, text, fileIDs: [fileID] })
 | 编号 | 事项 | 结论 / 上线前动作 |
 | --- | --- | --- |
 | Q19 | 类目与主体 | **A：个人主体 + 工具类目先提审**；先去控制台确认云托管能否开通，被拒再变更主体 |
-| Q22 | 数据库 | **MySQL 8.0**：本地 Docker 容器，生产云托管 MySQL；关闭自动暂停 |
+| Q22 | 数据库 | **MySQL 5.7.18**：本地 Docker 容器，生产云托管 MySQL；关闭自动暂停 |
 | Q23 | 对象存储 | **生产 COS/fileID**；本地 MinIO 容器，仅 dev |
 | Q24 | Redis | **一期不用**；扩多实例前再补 |
 | Q25 | 自定义域名 | **不绑**；未来 H5/Web 再办 |

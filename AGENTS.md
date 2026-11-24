@@ -1,4 +1,4 @@
-﻿# AGENTS.md · HM-Lesson 协作与工程规范
+# AGENTS.md · HM-Lesson 协作与工程规范
 
 > 本文件是**所有 AI Agent 与人类协作者的强制约束**，优先级高于任何单次对话中的口头建议。
 > 违反本文件的操作视为错误交付，必须回滚并说明原因。
@@ -24,7 +24,7 @@
    - 必要时先向用户提问，再继续。
 4. 已定结论（2026-11-18）：Q1=B 小程序教师模式；Q2=个人主体未认证（绑定走手机号+审批/绑定码，禁用 `getPhoneNumber`）；Q4=`github.com/bishop9910/hm-lesson`；Q5=多老师可扩，支持同时多个老师；Q6=Excel 导入；Q7=订阅消息+站内信；Q8=未到课不自动扣课时；Q9=提交即锁时段；Q10=wot-design-uni；Q12=青绿视觉；Q13=一期不做支付；Q14=导出 xlsx；Q16=Go 已装、Docker 在 Debian；Q17=GitHub Actions；Q18=一期不做暗色。
 5. 2026-11-22 变更：Q15 由“Debian 单机 Compose”改为**微信云托管**；Q11 存储改为**云托管对象存储（COS/fileID）**，不再以 SeaweedFS 为生产默认；Q3 域名/备案对小程序侧**不再阻塞**（`callContainer`/`connectContainer` 不需要域名），仅在需要非小程序客户端时才涉及自定义域名。
-6. 已确认（2026-11-22 第二轮）：Q19=A（个人主体 + 工具类目先提审）、Q22=MySQL 8.0（本地容器/生产云托管）、Q23=生产 COS/本地 MinIO、Q24=一期不用 Redis、Q25=不绑自定义域名、Q26=AppID 不变更、Q27=GitHub Actions、Q28=A（功能范围全保留，IM 除外）。
+6. 已确认（2026-11-22 第二轮）：Q19=A（个人主体 + 工具类目先提审）、Q22=MySQL 5.7.18（本地容器/生产云托管）、Q23=生产 COS/本地 MinIO、Q24=一期不用 Redis、Q25=不绑自定义域名、Q26=AppID 不变更、Q27=GitHub Actions、Q28=A（功能范围全保留，IM 除外）。
 7. 用 `todo_write` 列出步骤；多步骤任务先给计划再动手。
 
 ## 2. 文档优先级（冲突时）
@@ -67,7 +67,7 @@
 | RPC 框架 | github.com/go-kratos/kratos/v3 | v3.0.x，锁定 minor |
 | 协议 | Protobuf + buf | buf 1.75+；`buf lint` + `buf breaking` |
 | 传输 | HTTP/JSON + WebSocket（小程序 `callContainer` / `connectContainer`）；gRPC 仅内部/工具 | 同一 proto 生成多套 |
-| 数据库 | **MySQL 8.0**：本地 Docker 容器 / 生产云托管 MySQL（Q22 已确认） | 见 §6.3 |
+| 数据库 | **MySQL 5.7.18**：本地 Docker 容器 / 生产云托管 MySQL（Q22 已确认） | 见 §6.3 |
 | 建表 | `backend/migrations/*.up.sql` / `.down.sql`（embed） | 启动时 `GET_LOCK` 后按版本执行；`cmd/migrate` 手工 up/down/version |
 | ORM/驱动 | GORM v2 + `mysql` 驱动 | 复杂查询写原生 SQL |
 | 缓存/限流 | **一期不用 Redis**：MySQL 计数表 + 进程内 LRU（Q24） | — |
@@ -117,7 +117,7 @@ HM-Lesson/
 │   └── pnpm-workspace.yaml
 ├── deploy/
 │   ├── cloudrun/               # 云托管部署说明/配置、环境变量样例
-│   └── local/                  # 本地开发 compose（MySQL 8.0 + MinIO）
+│   └── local/                  # 本地开发 compose（MySQL 5.7.18 + MinIO）
 ├── .github/workflows/          # CI + 云托管部署
 └── scripts/                    # 仅开发/运维脚本，需可重复执行
 ```
@@ -152,11 +152,11 @@ HM-Lesson/
 - 每张表：`id` 主键（UUIDv7，`char(36)`）、`created_at`、`updated_at`、需要时 `deleted_at`（仅归档类实体）。时间统一 UTC。
 - 外键、唯一约束、CHECK 必须显式命名（`fk_`、`uq_`、`ck_`）。
 - 枚举用 `text/varchar + CHECK`，不用数据库原生 enum。
-- **MySQL 8.0（Q22 已确认，本地容器与生产云托管同一套 SQL）**：
-  - 库/表名全小写（`lower_case_table_names` 创建后不可改）；字符集 `utf8mb4`，排序 `utf8mb4_0900_ai_ci`；
+- **MySQL 5.7.18（Q22 已确认，本地容器与生产云托管同一套 SQL）**：
+  - 库/表名全小写（`lower_case_table_names` 创建后不可改）；字符集 `utf8mb4`，排序 `utf8mb4_unicode_ci`；
   - **不支持部分唯一索引**：预约冲突用“生成列 + 唯一索引”或事务内 `SELECT ... FOR UPDATE`，ADR-011 的实现方式需同步改写；
   - 不支持 `RETURNING`、`ON CONFLICT`、`FILTER`、`ILIKE`、`JSONB`、`timestamptz`、`numeric[]`；用 `LAST_INSERT_ID()`、`ON DUPLICATE KEY`、`JSON`、`datetime(3)`；
-  - `CHECK` 需 8.0.16+；`TEXT` 不能有默认值，需要默认值时用 `VARCHAR`。
+  - **MySQL 5.7 会解析但忽略 `CHECK`**：所有枚举/范围校验必须在 Go 侧再做一遍（biz/校验层），不能只依赖数据库；`TEXT` 不能有默认值，需要默认值时用 `VARCHAR`。
 - 索引命名 `idx_<table>_<cols>`；“一个时段一个有效预约”必须有数据库级约束，不能只靠应用判断。
 - 迁移必须在**空库**上从零 up/down/up 验证；每次只前进，破坏性变更需备份与评审。
 - 禁止在迁移里写业务数据（种子放 `seeds/`，仅 dev）。
@@ -193,7 +193,7 @@ HM-Lesson/
 | 层 | 要求 |
 | --- | --- |
 | 单元 | biz 状态机、课时计算、权限判定必须有表驱动测试；新增逻辑覆盖率不低于 70% |
-| 集成 | testcontainers 起 MySQL 8.0 + MinIO；repo 与事务测试；空库迁移测试 |
+| 集成 | testcontainers 起 MySQL 5.7.18 + MinIO；repo 与事务测试；空库迁移测试 |
 | 接口 | 每个 P0 RPC 至少 happy path + 一个权限/状态错误用例（httptest） |
 | 云托管契约 | `callContainer` 头解析、100 KiB/1000 KiB 边界、15 s 超时、fileID 上传下载、WS 首帧认证 |
 | E2E | 关键链路：绑定→看到任务→提交→批阅→家长可见；预约→审核→完成→扣课时 |
@@ -236,7 +236,7 @@ HM-Lesson/
 
 - [ ] 代码符合分层与命名规范，无 `any`/无跳层/无硬编码密钥
 - [ ] proto 已生成，`buf lint` 通过，前端类型已更新
-- [ ] 迁移成对且空库 up/down/up 通过，MySQL 8.0 方言；涉及 DB 的改动已验证
+- [ ] 迁移成对且空库 up/down/up 通过，MySQL 5.7.18 方言；涉及 DB 的改动已验证
 - [ ] 单测 + 集成测试通过，新增逻辑有覆盖
 - [ ] 权限路径有显式测试（越权返回 404）
 - [ ] 前端三态齐全，构建通过，主包/分包体积未超限

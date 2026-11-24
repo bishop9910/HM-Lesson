@@ -3,7 +3,7 @@
 > 把「客户分层跟进 / 任务下发与作业批阅 / 一对一预约排课 / 课时台账 / 资料库 / 通知回执 / 家长门户 / 看板导出」做成一套**微信云托管**上的微信小程序 + Go 后端系统。
 
 - **业务蓝本**：[`docs/鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx`](<docs/鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx>)（委托方原飞书零代码方案 V1.0，2026-11-17）
-- **技术路线**：**微信云托管（上海，单服务 `hm-api`）** ｜ Go Kratos v3 + **MySQL 8.0（本地容器 / 生产云托管）** + **生产 COS / 本地 MinIO** + 一期不用 Redis ｜ uni-app（Vue3 + TypeScript）微信小程序，**家长端与教师模式同一个小程序、按角色区分**
+- **技术路线**：**微信云托管（上海，单服务 `hm-api`）** ｜ Go Kratos v3 + **MySQL 5.7.18（本地容器 / 生产云托管）** + **生产 COS / 本地 MinIO** + 一期不用 Redis ｜ uni-app（Vue3 + TypeScript）微信小程序，**家长端与教师模式同一个小程序、按角色区分**
 - **域名**：小程序通过 `wx.cloud.callContainer` / `connectContainer` 直连云托管，**不需要服务器域名、不需要域名 ICP 备案**；当前没有域名备案也不影响上线。将来做 H5/Web/对外 API 时才需要已备案的自定义域名。
 - **当前状态**：**M1 骨架 + 多老师认证已落盘（2026-11-23）**。backend 已接入 Kratos v3，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`data.Migrate` 启动版本化迁移；`go build/vet/test` 与 `/healthz`、`/readyz` 已验证。前端完成教师登录/成员管理页，`vue-tsc` 与 `mp-weixin` 构建通过。**尚未连 MySQL 实测迁移/登录**，未连云托管 `dev`。
 
@@ -39,7 +39,7 @@ flowchart LR
   end
 
   subgraph Data[数据层]
-    DB[(MySQL 8.0)]
+    DB[(MySQL 5.7.18)]
     COS[(云托管对象存储<br/>COS / fileID)]
   end
 
@@ -67,7 +67,7 @@ flowchart LR
 | 语言 | Go | **1.25+** | Kratos v3 的 `go.mod` 要求 `go 1.25.0` |
 | 后端框架 | [go-kratos/kratos](https://github.com/go-kratos/kratos) | **v3.0.x**（`github.com/go-kratos/kratos/v3`） | v3 于 2026-06-26 发布，日志改用 `log/slog`，JWT 中间件迁至 contrib |
 | IDL / 生成 | protobuf + [buf](https://buf.build) | buf 1.75（本机） | `buf lint` / `buf breaking`；`protoc-gen-go-http`、`protoc-gen-openapi` |
-| 数据库 | **MySQL 8.0**：本地 Docker 容器 / 生产云托管 MySQL（Q22 已确认） | — | 主键 UUIDv7；`utf8mb4`、`datetime(3)`、`JSON`、生成列唯一索引 |
+| 数据库 | **MySQL 5.7.18**：本地 Docker 容器 / 生产云托管 MySQL（Q22 已确认） | — | 主键 UUIDv7；`utf8mb4`、`datetime(3)`、`JSON`、生成列唯一索引 |
 | 建表 | 内嵌 `migrations/*.sql` + `data.Migrate` | 启动时版本化迁移 | 成对 up/down；启动取连接级锁执行（ADR-003） |
 | ORM / 驱动 | GORM v2 + `mysql` 驱动 | 最新稳定 | 复杂报表用原生 SQL；仓储接口隔离 |
 | 缓存 / 锁 | **一期不用 Redis**（Q24）：MySQL 计数表 + 进程内 LRU | — | 扩多实例前必须补 Redis 或数据库共享状态 |
@@ -112,7 +112,7 @@ HM-Lesson/
 │   └── packages/{api-types,shared}/
 ├── deploy/
 │   ├── cloudrun/                 # 云托管部署说明 / 环境变量样例
-│   └── local/                    # 本地开发 compose（MySQL 8.0 + MinIO）
+│   └── local/                    # 本地开发 compose（MySQL 5.7.18 + MinIO）
 ├── .github/workflows/            # CI + 云托管部署
 └── scripts/
 ```
@@ -193,7 +193,7 @@ pnpm --filter @hm/mp build:mp-weixin   # 开发预览用 dev:mp-weixin，产物�
 
 - **版本化迁移**（ADR-003/028）：唯一事实来源是 `backend/migrations/NNNN_*.up.sql` 与 `.down.sql`，成对提供，按版本只前进。
 - **启动迁移**：`data.Migrate` 用同一 MySQL 连接取 `GET_LOCK('hm_migrate', 30)`，读 `schema_migrations` 当前版本，按顺序执行未应用的 up，失败则拒绝启动（fail fast）；`cmd/hm` 启动时自动调用，`cmd/migrate` 可手工 `up`/`down`/`version`。
-- **方言已定 MySQL 8.0**（Q22）：`utf8mb4`、`datetime(3)`、`JSON`、生成列唯一索引；不写 PG 方言。
+- **方言已定 MySQL 5.7.18**（Q22）：`utf8mb4`、`datetime(3)`、`JSON`、生成列唯一索引；不写 PG 方言。
 - **变更方式**：新增/修改表 → 新建 `migrations/NNNN_*.up.sql` 与 `.down.sql`；禁止修改已发布的迁移，修复用新迁移。
 - **生产**：只前进；回滚优先“新迁移补偿”，破坏性 down 需备份与人工确认。
 
@@ -204,7 +204,7 @@ pnpm --filter @hm/mp build:mp-weixin   # 开发预览用 dev:mp-weixin，产物�
 | 层 | 工具 | 覆盖 |
 | --- | --- | --- |
 | 后端单元 | `go test` + testify | 状态机、课时计算、权限判定、参数校验 |
-| 后端集成 | testcontainers-go 或 compose test profile | MySQL 8.0：迁移、事务、并发抢时段、消课幂等 |
+| 后端集成 | testcontainers-go 或 compose test profile | MySQL 5.7.18：迁移、事务、并发抢时段、消课幂等 |
 | 接口契约 | `buf breaking` + HTTP 黑盒用例 | proto 兼容性、错误码、分页、鉴权 |
 | 云托管契约 | httptest + 手动 | `X-WX-*` 头解析、100 KiB/1000 KiB 边界、15 s 超时、fileID、WS 首帧认证 |
 | 前端单元 | Vitest + Vue Test Utils | 请求封装、store、金额/课时格式化 |
@@ -221,7 +221,7 @@ CI 门禁：`lint + typecheck + unit + integration + build` 全绿才允许合�
 ```text
 小程序 ──callContainer/connectContainer──> 微信云托管（上海）
                                              └─ hm-api（单服务，容器 :80，min=max=1）
-                                                  ├─ MySQL 8.0（本地容器 / 生产云托管）
+                                                  ├─ MySQL 5.7.18（本地容器 / 生产云托管）
                                                   └─ COS（fileID）
 ```
 
@@ -234,7 +234,7 @@ CI 门禁：`lint + typecheck + unit + integration + build` 全绿才允许合�
 
 1. 完成 **Q19/Q26**：确认工具类目提审路径与 AppID 是否变更；再创建生产云环境（环境绑定 AppID，事后变更成本高）。
 2. 开通云托管，创建 `prod` 环境与服务 `hm-api`（端口 80，min=max=1，健康检查 `/healthz`）。
-3. 数据库（Q22 已定）：云托管 MySQL 8.0；关闭自动暂停，配好连接串与备份。
+3. 数据库（Q22 已定）：云托管 MySQL 5.7.18；关闭自动暂停，配好连接串与备份。
 4. 开通对象存储；配置 bucket、地域、私有读；服务端 COS 凭据入环境变量。
 5. 配置环境变量（见部署手册 §7）；敏感值只放控制台。
 6. 推镜像到 TCR，创建首个版本；观察启动日志与 `/readyz`。
@@ -263,7 +263,7 @@ CI 门禁：`lint + typecheck + unit + integration + build` 全绿才允许合�
 
 | 飞书原方案 | 本方案 | 原因 |
 | --- | --- | --- |
-| 多维表格当数据库 | MySQL 8.0 + Kratos 服务 + 版本化迁移 | 可测试、可审计、可扩展；支持并发与事务 |
+| 多维表格当数据库 | MySQL 5.7.18 + Kratos 服务 + 版本化迁移 | 可测试、可审计、可扩展；支持并发与事务 |
 | 飞书自动化 | Outbox 表 + 进程内 job 调度 + 订阅消息 / 站内信 | 云托管单服务内完成；投递可重试、可观测 |
 | 知识库 + 分组权限 | 云托管对象存储（COS）+ 服务端权限矩阵 + fileID 鉴权 | 权限在服务端；小程序直传，不经过 100 KiB 请求体 |
 | 业务小程序（飞书） | 自研 uni-app 微信小程序 | 家长无需安装飞书；微信内直接打开 |

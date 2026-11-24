@@ -1,4 +1,4 @@
-﻿# 架构决策记录（ADR）· HM-Lesson
+# 架构决策记录（ADR）· HM-Lesson
 
 > 规则：任何**架构级**选择（框架、存储、协议、部署形态、安全模型）必须在此登记，格式统一为「背景 / 决定 / 理由 / 影响 / 回滚」。
 > 产品规则（状态机、权限矩阵、课时与预约规则）不放这里，放需求文档。
@@ -7,7 +7,7 @@
 | 编号 | 决策 | 状态 |
 | --- | --- | --- |
 | ADR-001 | 后端采用 Go Kratos v3（而非 v2 / Gin） | 已采纳 |
-| ADR-002 | 数据库：PostgreSQL 17 + GORM v2/pgx | **已废弃**（Q22 确认 MySQL 8.0，见 ADR-023） |
+| ADR-002 | 数据库：PostgreSQL 17 + GORM v2/pgx | **已废弃**（Q22 确认 MySQL 5.7.18，见 ADR-023） |
 | ADR-003 | 版本化 SQL 迁移（格式与 golang-migrate 兼容，执行器见 ADR-028） | 已采纳 |
 | ADR-004 | 主键 UUIDv7（应用侧生成） | 已采纳 |
 | ADR-005 | 枚举用 `text/varchar + CHECK`，不用数据库原生 enum | 已采纳 |
@@ -28,7 +28,7 @@
 | ADR-020 | 生产部署改用微信云托管（上海，单服务 `hm-api`） | 已采纳（Q15 变更） |
 | ADR-021 | 小程序接入不依赖服务器域名/ICP 备案（callContainer / connectContainer） | 已采纳 |
 | ADR-022 | 生产对象存储用云托管 COS + fileID，S3 仅本地 dev | 已采纳（Q11 变更） |
-| ADR-023 | 数据库：MySQL 8.0（本地容器 / 生产云托管） | 已采纳（Q22 确认） |
+| ADR-023 | 数据库：MySQL 5.7.18（本地容器 / 生产云托管） | 已采纳（Q22 确认） |
 | ADR-024 | 单服务内嵌调度，`min=max=1` + 数据库锁 | 已采纳 |
 | ADR-025 | 迁移在启动时加锁执行（CI 一次性任务备选） | 已采纳（执行器见 ADR-028） |
 | ADR-026 | 产品定位为工具类（作业收集/家校协作），砍掉一切 IM | 已采纳（2026-11-22 用户指令） |
@@ -61,7 +61,7 @@
 
 **影响**：需维护迁移；GORM 的零值/软删除需统一约定（本项目用显式 `archived_at`，不依赖 GORM 软删除）；报表 SQL 集中在 `data/report`。
 
-> **2026-11-22 更新**：部署改为微信云托管后，托管数据库只有 MySQL 5.7/8.0；本文档保留 PG 17 作为备选（腾讯云实例 + VPC）。推荐改为 MySQL 8.0，见 ADR-023，**最终以 Q22 为准**。MySQL 下 `uuid`→`char(36)`、`jsonb`→`json`、`timestamptz`→`datetime(3)`、部分唯一索引→生成列唯一索引。
+> **2026-11-22 更新**：部署改为微信云托管后，托管数据库只有 MySQL 5.7/8.0；本文档保留 PG 17 作为备选（腾讯云实例 + VPC）。推荐改为 MySQL 5.7.18，见 ADR-023，**最终以 Q22 为准**。MySQL 下 `uuid`→`char(36)`、`jsonb`→`json`、`timestamptz`→`datetime(3)`、部分唯一索引→生成列唯一索引。
 
 **回滚**：换库成本高，故 M1 即锁定；如必须换，优先考虑兼容 PG 协议的 Cockroach/云 PG，而非 MySQL。
 
@@ -195,7 +195,7 @@
 
 **影响**：待审核预约会占用时段；需设置“待审核超时自动释放”（建议 24h，Q9）；改期=取消+重提。
 
-> **2026-11-22 方言修正**：MySQL 8.0 不支持部分唯一索引。实现改为 `active_flag` 生成列（`CASE WHEN status IN ('pending','approved') THEN 1 ELSE NULL END`）+ `UNIQUE(slot_id, active_flag)`；或事务内 `SELECT ... FOR UPDATE` 作为补充。语义不变，TC-08 仍要求数据库级约束。
+> **2026-11-22 方言修正**：MySQL 5.7.18 不支持部分唯一索引。实现改为 `active_flag` 生成列（`CASE WHEN status IN ('pending','approved') THEN 1 ELSE NULL END`）+ `UNIQUE(slot_id, active_flag)`；或事务内 `SELECT ... FOR UPDATE` 作为补充。语义不变，TC-08 仍要求数据库级约束。
 
 **回滚**：改为“审核通过才锁”需迁移索引并处理已占位数据，成本中等，故先在 Q9 确认。
 
@@ -364,13 +364,13 @@
 
 ---
 
-## ADR-023 数据库：统一 MySQL 8.0（本地容器 / 生产云托管）
+## ADR-023 数据库：统一 MySQL 5.7.18（本地容器 / 生产云托管）
 
 **背景**：云托管只提供 MySQL 5.7/8.0（Serverless），没有托管 PostgreSQL。用户确认 Q22 用 MySQL 容器起步，但云托管服务容器无持久盘，不能把 MySQL 跑在生产服务容器内。原数据模型按 PG 17 设计，但尚未写建表代码。
 
-**决定（2026-11-22 已确认）**：统一 MySQL 8.0。本地开发用 Docker Compose `mysql:8.0`；生产用云托管 MySQL 8.0；两套同一方言、同一套 `backend/migrations/*.sql`（版本化迁移，执行器见 ADR-028），仅 `HM_DB_DSN` 不同。`data` 层 GORM + `mysql` 驱动，复杂 SQL 写原生；不用 PostgreSQL。
+**决定（2026-11-22 已确认）**：统一 MySQL 5.7.18。本地开发用 Docker Compose `mysql:5.7`；生产用云托管 MySQL 5.7.18；两套同一方言、同一套 `backend/migrations/*.sql`（版本化迁移，执行器见 ADR-028），仅 `HM_DB_DSN` 不同。`data` 层 GORM + `mysql` 驱动，复杂 SQL 写原生；不用 PostgreSQL。
 
-**理由**：满足“先起容器跑着”的开发诉求；生产数据不放在无持久盘的服务容器；托管库同账号/同网络、成本低；500 学员规模足够；MySQL 8.0 支持 CHECK（8.0.16+）、JSON、生成列。
+**理由**：满足“先起容器跑着”的开发诉求；生产数据不放在无持久盘的服务容器；托管库同账号/同网络、成本低；500 学员规模足够；MySQL 5.7.18 支持 JSON、生成列；`CHECK` 会被解析但忽略，枚举/范围校验由应用层兜底。
 
 **影响**：MySQL 无部分唯一索引，预约冲突用生成列 + 唯一索引；无 `RETURNING`/`ON CONFLICT`/`JSONB`/`FILTER`；`lower_case_table_names` 建库前固定；Serverless 会自动暂停，需关闭或设最小 CCU；备份/慢日志需腾讯云侧配置；`utf8mb4` 必须显式设置。
 

@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Open 打开 MySQL 8.0；DSN 需带 parseTime=true&loc=UTC&charset=utf8mb4。
+// Open 打开 MySQL 5.7.18；DSN 需带 parseTime=true&loc=UTC&charset=utf8mb4。
 func Open(dsn string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("HM_DB_DSN 未配置")
