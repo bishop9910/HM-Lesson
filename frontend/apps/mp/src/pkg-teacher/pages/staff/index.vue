@@ -20,6 +20,9 @@ const phone = ref("");
 const password = ref("");
 const role = ref<"owner" | "assistant">("assistant");
 const creating = ref(false);
+const selecting = ref(false);
+const picked = ref<string[]>([]);
+const batchBusy = ref(false);
 
 function toast(title: string): void {
   uni.showToast({ title, icon: "none" });
@@ -82,6 +85,52 @@ function back(): void {
   uni.navigateBack();
 }
 
+function enterSelect(id: string): void {
+  selecting.value = true;
+  togglePick(id);
+}
+
+function togglePick(id: string): void {
+  const i = picked.value.indexOf(id);
+  if (i >= 0) picked.value.splice(i, 1);
+  else picked.value.push(id);
+}
+
+function cancelSelect(): void {
+  selecting.value = false;
+  picked.value = [];
+}
+
+async function batchStatus(next: "active" | "disabled"): Promise<void> {
+  const targets = list.value.filter((s) => picked.value.includes(s.id) && s.status !== next);
+  if (!targets.length) {
+    toast(next === "disabled" ? "选中的成员都已是停用状态" : "选中的成员都已是启用状态");
+    return;
+  }
+  const res = await uni.showModal({
+    title: next === "disabled" ? "批量停用" : "批量启用",
+    content: `${next === "disabled" ? "停用" : "启用"}选中的 ${targets.length} 位成员？`,
+  });
+  if (!res.confirm) return;
+  batchBusy.value = true;
+  let ok = 0;
+  try {
+    for (const item of targets) {
+      try {
+        await request(`/api/v1/staff/${item.id}`, "PATCH", { status: next });
+        ok++;
+      } catch {
+        // 自己/最后一个 owner 会被服务端拒绝，跳过继续
+      }
+    }
+    toast(`已处理 ${ok} 位`);
+    cancelSelect();
+    await load();
+  } finally {
+    batchBusy.value = false;
+  }
+}
+
 onLoad(() => {
   if (!session.isOwner) {
     toast("仅负责人可管理成员");
@@ -114,14 +163,31 @@ onLoad(() => {
     </view>
 
     <view class="list">
-      <view v-for="item in list" :key="item.id" class="row">
+      <view
+        v-for="item in list"
+        :key="item.id"
+        class="row"
+        :class="{ selected: picked.includes(item.id) }"
+        @longpress.stop="enterSelect(item.id)"
+        @click="selecting ? togglePick(item.id) : undefined"
+      >
+        <view v-if="selecting" class="check" :class="{ on: picked.includes(item.id) }">
+          {{ picked.includes(item.id) ? "✓" : "" }}
+        </view>
         <view class="row-main">
           <text class="row-title">{{ item.name }} · {{ item.role === "owner" ? "负责人" : "助教" }}</text>
           <text class="row-hint">{{ item.phone }} · {{ item.status === "active" ? "启用" : "已停用" }}</text>
         </view>
-        <button class="link" @click="toggle(item)">{{ item.status === "active" ? "停用" : "启用" }}</button>
+        <button v-if="!selecting" class="link" @click="toggle(item)">{{ item.status === "active" ? "停用" : "启用" }}</button>
       </view>
       <text v-if="!loading && list.length === 0" class="empty">还没有成员</text>
+    </view>
+
+    <view v-if="selecting" class="batchbar">
+      <text class="batch-num">{{ picked.length }} 已选</text>
+      <button class="batch-cancel" @click="cancelSelect">取消</button>
+      <button class="batch-off" :disabled="batchBusy" @click="batchStatus('disabled')">停用</button>
+      <button class="batch-on" :disabled="batchBusy" @click="batchStatus('active')">启用</button>
     </view>
 
     <button class="ghost" @click="back">返回</button>
@@ -133,7 +199,7 @@ onLoad(() => {
 
 .page {
   min-height: 100vh;
-  padding: 32rpx $hm-space 64rpx;
+  padding: 32rpx $hm-space calc(160rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: $hm-bg;
 }
@@ -227,6 +293,7 @@ onLoad(() => {
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -235,6 +302,76 @@ onLoad(() => {
   background: $hm-surface;
   border: 1rpx solid $hm-border;
   border-radius: $hm-radius;
+}
+
+.row.selected {
+  border-color: $hm-primary;
+  background: #eef7f2;
+}
+
+.check {
+  position: absolute;
+  top: 12rpx;
+  right: 12rpx;
+  width: 36rpx;
+  height: 36rpx;
+  line-height: 36rpx;
+  text-align: center;
+  border-radius: 50%;
+  border: 1rpx solid $hm-border;
+  background: $hm-surface;
+  font-size: 22rpx;
+  color: #fff;
+}
+
+.check.on {
+  border-color: $hm-primary;
+  background: $hm-primary;
+}
+
+.batchbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: $hm-surface;
+  border-top: 1rpx solid $hm-border;
+  z-index: 20;
+}
+
+.batch-num {
+  margin-right: auto;
+  font-size: 26rpx;
+  color: $hm-muted;
+}
+
+.batch-cancel,
+.batch-off,
+.batch-on {
+  height: 72rpx;
+  padding: 0 24rpx;
+  line-height: 72rpx;
+  border-radius: 8rpx;
+  font-size: 25rpx;
+}
+
+.batch-cancel {
+  background: $hm-bg;
+  color: $hm-ink;
+}
+
+.batch-off {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.batch-on {
+  background: $hm-primary;
+  color: #fff;
 }
 
 .row-main {

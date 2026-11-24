@@ -197,6 +197,16 @@ func (s *Server) CloseTask(ctx khttp.Context) error {
 	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
+func (s *Server) DeleteTask(ctx khttp.Context) error {
+	if _, err := s.requireStaff(ctx, false); err != nil {
+		return err
+	}
+	if err := s.tasks.Delete(ctx, ctx.Vars().Get("id")); err != nil {
+		return mapTaskError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) ReviewQueue(ctx khttp.Context) error {
 	if _, err := s.requireStaff(ctx, false); err != nil {
 		return err

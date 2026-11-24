@@ -62,6 +62,9 @@ const templates = ref<TaskTemplate[]>([]);
 const students = ref<Student[]>([]);
 const selected = ref<string[]>([]);
 const saving = ref(false);
+const selecting = ref(false);
+const picked = ref<string[]>([]);
+const batchBusy = ref(false);
 
 const title = ref("");
 const description = ref("");
@@ -204,6 +207,87 @@ function openTask(id: string): void {
   uni.navigateTo({ url: `/pkg-teacher/pages/task/index?id=${id}` });
 }
 
+function enterSelect(id: string): void {
+  selecting.value = true;
+  togglePick(id);
+}
+
+function togglePick(id: string): void {
+  const i = picked.value.indexOf(id);
+  if (i >= 0) picked.value.splice(i, 1);
+  else picked.value.push(id);
+}
+
+function cancelSelect(): void {
+  selecting.value = false;
+  picked.value = [];
+}
+
+const pickedTasks = computed(() => tasks.value.filter((t) => picked.value.includes(t.id)));
+const pickedDeletable = computed(() => pickedTasks.value.filter((t) => t.status === "draft" || t.status === "closed"));
+const pickedPublished = computed(() => pickedTasks.value.filter((t) => t.status === "published"));
+
+async function batchDeleteTasks(): Promise<void> {
+  if (!pickedDeletable.value.length) {
+    uni.showToast({ title: "选中的任务里没有可删除的草稿或已结束任务", icon: "none" });
+    return;
+  }
+  const res = await uni.showModal({
+    title: "删除任务",
+    content: `删除选中的 ${pickedDeletable.value.length} 个任务？已结束任务会连同提交记录、评分、评语一起删除，无法恢复。`,
+    confirmText: "删除",
+    confirmColor: "#b91c1c",
+  });
+  if (!res.confirm) return;
+  batchBusy.value = true;
+  let ok = 0;
+  try {
+    for (const t of pickedDeletable.value) {
+      try {
+        await request(`/api/v1/tasks/${t.id}`, "DELETE");
+        ok++;
+      } catch {
+        // 单个失败继续处理其余任务
+      }
+    }
+    uni.showToast({ title: `已删除 ${ok} 个任务`, icon: "success" });
+    cancelSelect();
+    await load();
+  } finally {
+    batchBusy.value = false;
+  }
+}
+
+async function batchClosePublished(): Promise<void> {
+  if (!pickedPublished.value.length) {
+    uni.showToast({ title: "选中的任务里没有进行中的任务", icon: "none" });
+    return;
+  }
+  const res = await uni.showModal({
+    title: "批量结束",
+    content: `结束选中的 ${pickedPublished.value.length} 个任务？已提交的作业和成绩会保留。`,
+    confirmText: "结束",
+  });
+  if (!res.confirm) return;
+  batchBusy.value = true;
+  let ok = 0;
+  try {
+    for (const t of pickedPublished.value) {
+      try {
+        await request(`/api/v1/tasks/${t.id}/close`, "POST", {});
+        ok++;
+      } catch {
+        // 单个失败继续
+      }
+    }
+    uni.showToast({ title: `已结束 ${ok} 个`, icon: "success" });
+    cancelSelect();
+    await load();
+  } finally {
+    batchBusy.value = false;
+  }
+}
+
 onShow(load);
 </script>
 
@@ -228,7 +312,17 @@ onShow(load);
       <text class="empty-sub">新建后选择学员下发，一人一条提交记录。</text>
     </view>
 
-    <view v-for="t in tasks" :key="t.id" class="card" @tap="openTask(t.id)">
+    <view
+      v-for="t in tasks"
+      :key="t.id"
+      class="card"
+      :class="{ selected: picked.includes(t.id) }"
+      @longpress.stop="enterSelect(t.id)"
+      @tap="selecting ? togglePick(t.id) : openTask(t.id)"
+    >
+      <view v-if="selecting" class="check" :class="{ on: picked.includes(t.id) }">
+        {{ picked.includes(t.id) ? "✓" : "" }}
+      </view>
       <view class="row">
         <text class="title">{{ t.title }}</text>
         <text class="badge" :class="t.status">{{ statusLabels[t.status] }}</text>
@@ -244,6 +338,16 @@ onShow(load);
         <view class="stat danger"><text class="num">{{ t.overdue_count }}</text><text class="lbl">逾期</text></view>
       </view>
       <view class="bar"><view class="bar-in" :style="{ width: `${Math.round(t.submit_rate * 100)}%` }" /></view>
+    </view>
+
+    <view v-if="selecting" class="batchbar">
+      <view class="batch-count">
+        <text class="batch-num">{{ picked.length }}</text>
+        <text class="batch-label">已选</text>
+      </view>
+      <button class="batch-cancel" @tap="cancelSelect">取消</button>
+      <button class="batch-close" :disabled="!pickedPublished.length || batchBusy" @tap="batchClosePublished">结束</button>
+      <button class="batch-del" :disabled="!pickedDeletable.length || batchBusy" @tap="batchDeleteTasks">删除</button>
     </view>
 
     <view v-if="showCreate" class="mask" @tap.self="showCreate = false">
@@ -304,7 +408,7 @@ onShow(load);
 
 <style lang="scss">
 @import "@/styles/tokens.scss";
-.page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx 48rpx; }
+.page { min-height: 100vh; background: $hm-bg; padding: 24rpx 24rpx calc(160rpx + env(safe-area-inset-bottom)); }
 .toolbar { display: flex; gap: 16rpx; align-items: center; margin-bottom: 20rpx; }
 .search { flex: 1; height: 72rpx; padding: 0 24rpx; background: rgba(255, 255, 255, 0.55); border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 26rpx; }
 .primary { background: $hm-primary-strong; color: #fff; border-radius: 10rpx; font-size: 26rpx; }
@@ -312,7 +416,18 @@ onShow(load);
 .filters { white-space: nowrap; margin-bottom: 20rpx; }
 .chip { display: inline-block; padding: 10rpx 24rpx; margin-right: 12rpx; border-radius: 999rpx; background: transparent; color: $hm-muted; border: 1rpx solid $hm-rule; font-size: 24rpx; }
 .chip.on { background: $hm-primary-strong; color: #fff; border-color: $hm-primary-strong; }
-.card { background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 26rpx; margin-bottom: 20rpx; }
+.card { position: relative; background: rgba(255, 255, 255, 0.38); border: 1rpx solid $hm-rule; border-radius: 10rpx; padding: 26rpx; margin-bottom: 20rpx; }
+.card.selected { border-color: $hm-primary; background: #eef7f2; }
+.check { position: absolute; top: 16rpx; right: 16rpx; width: 40rpx; height: 40rpx; line-height: 40rpx; text-align: center; border-radius: 50%; border: 1rpx solid $hm-rule; background: $hm-surface; font-size: 24rpx; color: #fff; }
+.check.on { border-color: $hm-primary; background: $hm-primary; }
+.batchbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 12rpx; padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom)); background: $hm-surface; border-top: 1rpx solid $hm-border; z-index: 20; }
+.batch-count { display: flex; align-items: baseline; gap: 6rpx; margin-right: auto; }
+.batch-num { font-size: 40rpx; font-weight: 700; color: $hm-primary-strong; }
+.batch-label { font-size: 24rpx; color: $hm-muted; }
+.batch-cancel, .batch-close, .batch-del { height: 72rpx; padding: 0 22rpx; line-height: 72rpx; border-radius: 8rpx; font-size: 25rpx; }
+.batch-cancel { background: $hm-bg; color: $hm-ink; }
+.batch-close { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; }
+.batch-del { background: #b91c1c; color: #fff; }
 .row { display: flex; justify-content: space-between; gap: 16rpx; align-items: center; }
 .title { font-size: 30rpx; font-weight: 700; color: $hm-text; flex: 1; }
 .badge { font-size: 22rpx; padding: 4rpx 14rpx; border-radius: 999rpx; background: rgba(34, 48, 42, 0.07); color: $hm-muted; }

@@ -112,6 +112,7 @@ type TaskRepo interface {
 	CreateTask(ctx context.Context, t *Task) error
 	GetTask(ctx context.Context, id string) (*Task, error)
 	SetTaskStatus(ctx context.Context, id, from, to string) error
+	DeleteTask(ctx context.Context, id string) error
 	PublishTask(ctx context.Context, taskID string, studentIDs []string) (int, error)
 	ListAssignments(ctx context.Context, taskID string) ([]TaskAssignment, error)
 	ReviewQueue(ctx context.Context, limit int) ([]TaskAssignment, error)
@@ -206,6 +207,19 @@ func (u *TaskUsecase) Publish(ctx context.Context, id string, studentIDs []strin
 
 func (u *TaskUsecase) Close(ctx context.Context, id string) error {
 	return u.repo.SetTaskStatus(ctx, id, TaskPublished, TaskClosed)
+}
+
+// Delete 允许删除草稿与已结束任务；已发布任务必须先结束。
+// 已结束任务会连同 assignment 与提交历史一起删除，前端必须二次确认。
+func (u *TaskUsecase) Delete(ctx context.Context, id string) error {
+	t, err := u.repo.GetTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	if t.Status != TaskDraft && t.Status != TaskClosed {
+		return ErrTaskState
+	}
+	return u.repo.DeleteTask(ctx, id)
 }
 
 func (u *TaskUsecase) Detail(ctx context.Context, id string) (*TaskDetail, error) {

@@ -44,6 +44,9 @@ const loading = ref(false);
 const errorText = ref("");
 const creating = ref(false);
 const saving = ref(false);
+const selecting = ref(false);
+const selected = ref<string[]>([]);
+const batchBusy = ref(false);
 const form = ref({
   name: "",
   grade: "高一",
@@ -135,6 +138,49 @@ async function submitCreate(): Promise<void> {
 function openStudent(id: string): void {
   uni.navigateTo({ url: `/pkg-teacher/pages/student/index?id=${id}` });
 }
+
+function enterSelect(id: string): void {
+  selecting.value = true;
+  toggleSelect(id);
+}
+
+function toggleSelect(id: string): void {
+  const i = selected.value.indexOf(id);
+  if (i >= 0) selected.value.splice(i, 1);
+  else selected.value.push(id);
+}
+
+function cancelSelect(): void {
+  selecting.value = false;
+  selected.value = [];
+}
+
+async function batchArchive(): Promise<void> {
+  if (!selected.value.length) return;
+  const res = await uni.showModal({
+    title: "批量结课归档",
+    content: `将选中的 ${selected.value.length} 位学员改为“结课归档”？历史作业和课时不会删除。`,
+    confirmText: "归档",
+  });
+  if (!res.confirm) return;
+  batchBusy.value = true;
+  let ok = 0;
+  try {
+    for (const id of [...selected.value]) {
+      try {
+        await request(`/api/v1/students/${id}`, "PATCH", { status: "graduated" });
+        ok++;
+      } catch {
+        // 单个失败不阻断其余学员，最后统一提示。
+      }
+    }
+    uni.showToast({ title: `已归档 ${ok} 位`, icon: "success" });
+    cancelSelect();
+    await load();
+  } finally {
+    batchBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -169,7 +215,17 @@ function openStudent(id: string): void {
     <view v-else-if="loading" class="hint">正在加载…</view>
     <view v-else-if="!students.length" class="hint">还没有学员，点右上角新增。</view>
 
-    <view v-for="student in students" :key="student.id" class="card" @click="openStudent(student.id)">
+    <view
+      v-for="student in students"
+      :key="student.id"
+      class="card"
+      :class="{ selected: selected.includes(student.id) }"
+      @longpress.stop="enterSelect(student.id)"
+      @click="selecting ? toggleSelect(student.id) : openStudent(student.id)"
+    >
+      <view v-if="selecting" class="check" :class="{ on: selected.includes(student.id) }">
+        {{ selected.includes(student.id) ? "✓" : "" }}
+      </view>
       <view class="card-top">
         <text class="name">{{ student.name }}</text>
         <text class="grade">{{ student.grade }}</text>
@@ -179,6 +235,17 @@ function openStudent(id: string): void {
         <text class="status" :class="student.status">{{ statusLabels[student.status] || student.status }}</text>
         <text v-if="student.next_follow_up_at" class="follow">回访 {{ student.next_follow_up_at.slice(5, 10) }}</text>
       </view>
+    </view>
+
+    <view v-if="selecting" class="batchbar">
+      <view class="batch-count">
+        <text class="batch-num">{{ selected.length }}</text>
+        <text class="batch-label">已选</text>
+      </view>
+      <button class="batch-cancel" @click="cancelSelect">取消</button>
+      <button class="batch-ok" :loading="batchBusy" :disabled="!selected.length || batchBusy" @click="batchArchive">
+        结课归档
+      </button>
     </view>
 
     <view v-if="creating" class="mask" @click.self="closeCreate">
@@ -210,7 +277,7 @@ function openStudent(id: string): void {
 
 .page {
   min-height: 100vh;
-  padding: 32rpx $hm-space calc(48rpx + env(safe-area-inset-bottom));
+  padding: 32rpx $hm-space calc(160rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: $hm-bg;
 }
@@ -296,11 +363,88 @@ function openStudent(id: string): void {
 }
 
 .card {
+  position: relative;
   margin-top: 20rpx;
   padding: 24rpx;
   border-radius: $hm-radius;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
+}
+
+.card.selected {
+  border-color: $hm-primary;
+  background: #eef7f2;
+}
+
+.check {
+  position: absolute;
+  top: 18rpx;
+  right: 18rpx;
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 50%;
+  border: 1rpx solid $hm-border;
+  background: $hm-surface;
+  font-size: 24rpx;
+  color: #fff;
+}
+
+.check.on {
+  border-color: $hm-primary;
+  background: $hm-primary;
+}
+
+.batchbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: $hm-surface;
+  border-top: 1rpx solid $hm-border;
+  z-index: 20;
+}
+
+.batch-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+  margin-right: auto;
+}
+
+.batch-num {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: $hm-primary-strong;
+}
+
+.batch-label {
+  font-size: 24rpx;
+  color: $hm-muted;
+}
+
+.batch-cancel,
+.batch-ok {
+  height: 72rpx;
+  padding: 0 28rpx;
+  line-height: 72rpx;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+}
+
+.batch-cancel {
+  background: $hm-bg;
+  color: $hm-ink;
+}
+
+.batch-ok {
+  background: $hm-primary;
+  color: #fff;
 }
 
 .card-top {

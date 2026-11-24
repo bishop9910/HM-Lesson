@@ -91,6 +91,7 @@ func main() {
 	router.GET("/api/v1/tasks/{id}", authSrv.GetTask)
 	router.POST("/api/v1/tasks/{id}/publish", authSrv.PublishTask)
 	router.POST("/api/v1/tasks/{id}/close", authSrv.CloseTask)
+	router.DELETE("/api/v1/tasks/{id}", authSrv.DeleteTask)
 	router.GET("/api/v1/reviews", authSrv.ReviewQueue)
 	router.GET("/api/v1/task-templates", authSrv.ListTemplates)
 	router.POST("/api/v1/task-templates", authSrv.CreateTemplate)

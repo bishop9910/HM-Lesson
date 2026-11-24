@@ -136,6 +136,30 @@ async function closeTask(): Promise<void> {
   }
 }
 
+async function deleteTask(): Promise<void> {
+  const closed = task.value?.status === "closed";
+  const confirmed = await new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: closed ? "删除已结束任务" : "删除草稿",
+      content: closed
+        ? "该任务已结束，删除后提交记录、评分、评语会一并删除，且无法恢复。确定删除？"
+        : "草稿删除后无法恢复，确定删除？",
+      confirmText: "删除",
+      confirmColor: "#b91c1c",
+      success: (r) => resolve(Boolean(r.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+  if (!confirmed) return;
+  try {
+    await request(`/api/v1/tasks/${id.value}`, "DELETE");
+    uni.showToast({ title: "已删除", icon: "success" });
+    setTimeout(() => uni.navigateBack(), 300);
+  } catch (e) {
+    uni.showToast({ title: e instanceof ApiError ? e.message : "删除失败", icon: "none" });
+  }
+}
+
 function preview(urls: string[], current: string): void {
   uni.previewImage({ urls, current });
 }
@@ -176,6 +200,7 @@ onLoad((options) => {
         </view>
         <view class="bar"><view class="bar-in" :style="{ width: `${Math.round((stats?.rate || 0) * 100)}%` }" /></view>
         <button v-if="task.status === 'published'" class="ghost close" @tap="closeTask">结束任务</button>
+        <button v-if="task.status !== 'published'" class="danger close" @tap="deleteTask">{{ task.status === "closed" ? "删除已结束任务" : "删除草稿" }}</button>
       </view>
 
       <view class="section-head">
@@ -252,6 +277,7 @@ onLoad((options) => {
 .ghost { background: transparent; color: $hm-primary-strong; border: 1rpx solid $hm-rule; border-radius: 10rpx; font-size: 25rpx; }
 .primary { background: $hm-primary; color: #fff; border-radius: 16rpx; font-size: 25rpx; }
 .close { margin-top: 18rpx; font-size: 24rpx; }
+.danger { background: #b91c1c; color: #fff; border: none; border-radius: 10rpx; font-size: 25rpx; }
 .section-head { display: flex; justify-content: space-between; margin: 10rpx 0 16rpx; font-size: 27rpx; font-weight: 600; }
 .sub { color: $hm-muted; font-size: 23rpx; font-weight: 400; }
 .name { font-size: 28rpx; font-weight: 600; }

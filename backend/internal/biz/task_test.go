@@ -36,6 +36,8 @@ func (f *fakeTaskRepo) GetTask(context.Context, string) (*Task, error) {
 
 func (f *fakeTaskRepo) SetTaskStatus(context.Context, string, string, string) error { return nil }
 
+func (f *fakeTaskRepo) DeleteTask(context.Context, string) error { return nil }
+
 func (f *fakeTaskRepo) PublishTask(_ context.Context, _ string, ids []string) (int, error) {
 	f.publishIDs = ids
 	f.published = len(ids)
@@ -114,6 +116,22 @@ func TestTaskCreateValidation(t *testing.T) {
 				t.Fatal("expected draft task")
 			}
 		})
+	}
+}
+
+func TestDeleteDraftOrClosed(t *testing.T) {
+	repo := &fakeTaskRepo{task: &Task{ID: "t1", Status: TaskDraft}}
+	uc := NewTaskUsecase(repo)
+	if err := uc.Delete(context.Background(), "t1"); err != nil {
+		t.Fatalf("draft delete: %v", err)
+	}
+	repo.task = &Task{ID: "t2", Status: TaskPublished}
+	if err := uc.Delete(context.Background(), "t2"); !errors.Is(err, ErrTaskState) {
+		t.Fatalf("published delete want state error, got %v", err)
+	}
+	repo.task = &Task{ID: "t3", Status: TaskClosed}
+	if err := uc.Delete(context.Background(), "t3"); err != nil {
+		t.Fatalf("closed delete: %v", err)
 	}
 }
 

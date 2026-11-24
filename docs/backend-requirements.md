@@ -470,7 +470,7 @@ backend/
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
 
-> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`。表中其余接口为规划，尚未实现，前端不得假设可用。
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET/DELETE /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 
@@ -503,6 +503,7 @@ backend/
 | GET | `/api/v1/tasks/{id}` | 详情 + 统计 + 逐份作业 |
 | POST | `/api/v1/tasks/{id}/publish` | 发布并生成 assignment |
 | POST | `/api/v1/tasks/{id}/close` | 截止 |
+| DELETE | `/api/v1/tasks/{id}` | 删除草稿或已结束任务；进行中任务必须先结束。已结束任务会级联删除 assignment 与提交历史，前端必须二次确认 |
 | GET | `/api/v1/reviews` | 待批阅队列（跨任务） |
 | POST | `/api/v1/assignments/{id}/review` | 批阅 / 打回（`return_reason` 非空即打回） |
 | GET/POST | `/api/v1/task-templates` | 模板列表 / 新建 |

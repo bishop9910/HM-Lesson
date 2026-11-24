@@ -109,6 +109,37 @@ func (r *TaskRepo) SetTaskStatus(ctx context.Context, id, from, to string) error
 	return nil
 }
 
+// DeleteTask 删除草稿或已结束任务；已结束任务连同 assignment 与提交历史一起删除。
+func (r *TaskRepo) DeleteTask(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var status string
+		err := tx.Raw("SELECT status FROM tasks WHERE id=? FOR UPDATE", id).Row().Scan(&status)
+		if err == sql.ErrNoRows {
+			return biz.ErrTaskNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if status != biz.TaskDraft && status != biz.TaskClosed {
+			return biz.ErrTaskState
+		}
+		if err := tx.Exec("DELETE FROM submissions WHERE assignment_id IN (SELECT id FROM task_assignments WHERE task_id=?)", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM task_assignments WHERE task_id=?", id).Error; err != nil {
+			return err
+		}
+		res := tx.Exec("DELETE FROM tasks WHERE id=?", id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return biz.ErrTaskNotFound
+		}
+		return nil
+	})
+}
+
 func (r *TaskRepo) PublishTask(ctx context.Context, taskID string, studentIDs []string) (int, error) {
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
