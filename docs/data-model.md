@@ -193,15 +193,18 @@ erDiagram
 | --- | --- | --- | --- |
 | id | uuid | PK | |
 | kind | text | NOT NULL DEFAULT 'students', CHECK IN ('students') | 预留其他类型 |
-| file_id | uuid | NOT NULL, FK files(id) | 原始 xlsx |
+| file_id | uuid | NULL | 原始 xlsx（当前直传解析，不落 files） |
 | status | text | NOT NULL DEFAULT 'preview', CHECK IN ('preview','committed','failed','rolled_back') | |
+| mode | varchar(16) | NOT NULL DEFAULT 'create' | `create` / `update`（update 预留） |
 | total_rows / created_rows / skipped_rows | int | NOT NULL DEFAULT 0 | 统计 |
 | error_count | int | NOT NULL DEFAULT 0 | |
-| error_report | jsonb | NULL | `[{row, column, message}]` |
+| error_report | json | NULL | `[{row, field, message}]`；预览逐行错误 |
+| rows_json | MEDIUMTEXT | NULL | 预览解析后的行，提交/回滚按批次使用 |
 | created_by | uuid | NOT NULL, FK staff(id) | 仅 owner |
 | created_at / committed_at / rolled_back_at | timestamptz | | |
 
 索引：`idx_import_batches_created_by_time`。回滚只删除本批次 `created_rows` 中且无任务/预约/流水引用的学员与家长。
+`students.import_batch_id`、`guardians.import_batch_id` 记录新建来源，便于回滚定位；迁移见 `backend/migrations/000003_import_batch.up.sql`。
 
 ### 3.2 标签与跟进
 

@@ -1,5 +1,6 @@
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 type RequestData = string | Record<string, unknown> | ArrayBuffer;
+export type AuthKind = "staff" | "guardian" | "none";
 
 interface CloudCallOptions {
   config: { env: string };
@@ -39,8 +40,10 @@ export function initCloud(): void {
   }
 }
 
-function authHeader(): Record<string, string> {
-  const token = (uni.getStorageSync("hm_token") as string) || "";
+function authHeader(kind: AuthKind): Record<string, string> {
+  if (kind === "none") return {};
+  const key = kind === "guardian" ? "hm_guardian_token" : "hm_token";
+  const token = (uni.getStorageSync(key) as string) || "";
   return token ? { "X-HM-Token": token } : {};
 }
 
@@ -54,8 +57,8 @@ function parseError(status: number, body: unknown): ApiError {
   return new ApiError(status, "UNKNOWN", `请求失败（HTTP ${status}）`);
 }
 
-export function request<T>(path: string, method: HttpMethod, data?: RequestData): Promise<T> {
-  const header: Record<string, string> = { ...authHeader() };
+export function request<T>(path: string, method: HttpMethod, data?: RequestData, auth: AuthKind = "staff"): Promise<T> {
+  const header: Record<string, string> = { ...authHeader(auth) };
   const timeout = 15000;
 
   if (cloud && cloudEnv) {

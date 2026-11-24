@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// NewID 暴露给 data 层写入新实体时使用。
+func NewID() string { return randomID() }
+
 // randomID 生成 UUIDv7（时间有序，便于索引）；格式为标准 36 字符。
 func randomID() string {
 	var b [16]byte

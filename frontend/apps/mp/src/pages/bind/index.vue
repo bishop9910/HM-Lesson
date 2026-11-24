@@ -1,17 +1,29 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { ApiError, request } from "@/utils/request";
 
 const phone = ref("");
-const code = ref("");
 const submitting = ref(false);
+const result = ref("");
 const canSubmit = computed(() => /^1\d{10}$/.test(phone.value));
 
 async function submit(): Promise<void> {
   if (!canSubmit.value || submitting.value) return;
   submitting.value = true;
+  result.value = "";
   try {
-    // M2 接入：POST /api/v1/auth/bind，body { phone, binding_code }
-    uni.showToast({ title: "绑定接口待接入", icon: "none" });
+    const res = await request<{ status: string }>("/api/v1/auth/bind-request", "POST", {
+      phone: phone.value,
+    });
+    const messages: Record<string, string> = {
+      active: "该手机号已绑定，请让老师确认学员关系。",
+      pending: "申请已提交，等待老师确认。",
+      rejected: "申请未通过，请联系老师。",
+      disabled: "该账号已停用，请联系老师。",
+    };
+    result.value = messages[res.status] ?? "申请已提交，等待老师确认。";
+  } catch (err) {
+    result.value = err instanceof ApiError ? err.message : "提交失败，请稍后重试。";
   } finally {
     submitting.value = false;
   }
@@ -21,22 +33,17 @@ async function submit(): Promise<void> {
 <template>
   <view class="page">
     <text class="title">绑定学员</text>
-    <text class="hint">输入老师在学员档案里登记的手机号。老师审批后即可查看孩子的作业与课时。</text>
+    <text class="hint">输入老师在学员档案里登记的手机号，提交后由老师确认。</text>
 
     <view class="field">
       <text class="label">家长手机号</text>
       <input v-model="phone" class="input" type="number" maxlength="11" placeholder="11 位手机号" />
     </view>
 
-    <view class="field">
-      <text class="label">绑定码（可选）</text>
-      <input v-model="code" class="input" type="number" maxlength="6" placeholder="老师提供的 6 位码" />
-    </view>
-
     <button class="primary" :disabled="!canSubmit || submitting" @click="submit">
-      {{ submitting ? "提交中…" : "提交绑定申请" }}
+      {{ submitting ? "提交中…" : "提交申请" }}
     </button>
-    <text class="footnote">不会向你索要验证码；绑定全程由老师审批。</text>
+    <text v-if="result" class="result">{{ result }}</text>
   </view>
 </template>
 
@@ -100,10 +107,10 @@ async function submit(): Promise<void> {
   opacity: 0.45;
 }
 
-.footnote {
+.result {
   display: block;
   margin-top: 24rpx;
-  font-size: 22rpx;
+  font-size: 24rpx;
   color: $hm-muted;
   text-align: center;
 }

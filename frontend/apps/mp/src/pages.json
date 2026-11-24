@@ -16,6 +16,14 @@
     {
       "path": "pages/bind/index",
       "style": { "navigationBarTitleText": "绑定学员" }
+    },
+    {
+      "path": "pages/guardian-login/index",
+      "style": { "navigationBarTitleText": "家长登录" }
+    },
+    {
+      "path": "pages/portal/index",
+      "style": { "navigationBarTitleText": "家长门户" }
     }
   ],
   "subPackages": [
@@ -33,6 +41,22 @@
         {
           "path": "pages/staff/index",
           "style": { "navigationBarTitleText": "成员管理" }
+        },
+        {
+          "path": "pages/students/index",
+          "style": { "navigationBarTitleText": "学员档案" }
+        },
+        {
+          "path": "pages/student/index",
+          "style": { "navigationBarTitleText": "学员详情" }
+        },
+        {
+          "path": "pages/guardians/index",
+          "style": { "navigationBarTitleText": "绑定审批" }
+        },
+        {
+          "path": "pages/import/index",
+          "style": { "navigationBarTitleText": "导入学员" }
         }
       ]
     }

@@ -7,14 +7,17 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(all) != 2 {
-		t.Fatalf("want 2 migrations, got %d", len(all))
+	if len(all) != 3 {
+		t.Fatalf("want 3 migrations, got %d", len(all))
 	}
 	if all[0].version != 1 || all[0].name != "init" {
 		t.Fatalf("unexpected first migration: %+v", all[0])
 	}
 	if all[1].version != 2 || all[1].name != "teaching" {
 		t.Fatalf("unexpected second migration: %+v", all[1])
+	}
+	if all[2].version != 3 || all[2].name != "import_batch" {
+		t.Fatalf("unexpected third migration: %+v", all[2])
 	}
 	for _, m := range all {
 		if len(m.up) == 0 || len(m.down) == 0 {

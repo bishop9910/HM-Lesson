@@ -1,4 +1,4 @@
-﻿# 后端需求规格 · HM-Lesson
+# 后端需求规格 · HM-Lesson
 
 > 对应业务蓝本：[`鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx`](<鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx>)（下称“蓝本”）
 > 技术基线：Go 1.25+ / Kratos v3 / 微信云托管（上海，单服务 `hm-api`）/ MySQL 5.7.18（本地容器 / 生产云托管，Q22 已确认）/ 云托管对象存储（COS/fileID，生产；本地 MinIO）/ 一期不用 Redis（Q24）
@@ -141,10 +141,11 @@ backend/
 | 下次回访时间 |  | `students.next_follow_up_at` | `YYYY-MM-DD`，按 Asia/Shanghai 当日 09:00 |
 | 备注 |  | `students.remark` | |
 
-- 接口：`GET /api/v1/imports/students/template`（xlsx）、`POST /api/v1/imports/students/preview`（multipart，≤5MB、≤5000 行，返回逐行错误）、`POST /api/v1/imports/students/commit`（带 `batch_id`）、`GET /api/v1/imports/{id}`、`POST /api/v1/imports/{id}/rollback`。
-- 校验：表头必须匹配；手机号按中国大陆 11 位校验；枚举值中文/英文均可；空手机号的行整行报错。
-- 判重：`guardians.phone` + `students.name` 已存在 → 默认跳过并在报告标注；`mode=update` 时只更新联系方式/备注，不动分组与状态（避免覆盖跟进成果）。
-- 写入：每 200 行一个事务；任一行失败只回滚该批并记录 `import_batches.error_report`，不产生半成品数据。
+- 接口：`GET /api/v1/imports/students/template`（返回 `{filename, content_base64}`）、`POST /api/v1/imports/students/preview`（JSON `{content_base64, mode}`，≤5MB、≤5000 行，返回逐行错误与批次 id）、`POST /api/v1/imports/{id}/commit`、`GET /api/v1/imports/{id}`、`POST /api/v1/imports/{id}/rollback`。
+- **上传通道限制**：小程序 `callContainer` 请求体上限 100 KiB，base64 还会膨胀约 4/3，因此当前实际约 60KB xlsx；前端已加 80KB base64 守卫。大文件后续改用 `wx.cloud.uploadFile`→COS fileID→服务端拉取（M3 接入），接口保持 batch 语义不变。
+- 校验：表头必须匹配；手机号按中国大陆 11 位校验，姓名/手机号为空的行整行报错；枚举值中文/英文均可。
+- 判重：`guardians.phone` + `students.name` 已存在 → 默认跳过并在报告标注；`mode=update` 预留，当前按 create 处理。
+- 写入：一个批次一个事务（原子）；任一行失败整批回滚并记录 `import_batches.error_report`，不产生半成品数据。
 - 回滚：只允许回滚“本批次新建、且无任务/预约/流水引用”的学员与家长；否则拒绝并列出引用。
 - 权限：仅 `owner`；导入与回滚都写审计日志。
 
@@ -466,6 +467,10 @@ backend/
 | GET | `/api/v1/ws/ticket` | S/G | 换取 WS 短时 ticket |
 | GET/POST | `/api/v1/staff` | S(owner) | 成员列表 / 新增（Q5 预留） |
 | PATCH | `/api/v1/staff/{id}` | S(owner) | 改角色/禁用（不可禁用最后一个 owner） |
+| POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
+| GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
+
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 
@@ -484,9 +489,9 @@ backend/
 | POST | `/api/v1/students/{id}/binding-codes` | 生成 6 位绑定码（7 天、一次性） |
 | GET/POST | `/api/v1/tags` | 标签维护 |
 | GET | `/api/v1/follow-ups/upcoming` | 待回访 |
-| GET | `/api/v1/imports/students/template` | 下载导入模板 xlsx |
-| POST | `/api/v1/imports/students/preview` | 上传 xlsx，返回逐行校验 |
-| POST | `/api/v1/imports/students/commit` | 按 batch 提交导入 |
+| GET | `/api/v1/imports/students/template` | 下载导入模板（base64 xlsx） |
+| POST | `/api/v1/imports/students/preview` | 上传 base64 xlsx，返回逐行校验 |
+| POST | `/api/v1/imports/{id}/commit` | 提交预览批次 |
 | GET | `/api/v1/imports/{id}` | 批次详情 + 错误报告 |
 | POST | `/api/v1/imports/{id}/rollback` | 回滚本批次新建数据 |
 

@@ -12,7 +12,7 @@
 
 **不再使用**：Debian 自建服务器、Docker Compose 生产部署、Caddy/Nginx 反向代理、自建 SeaweedFS/MinIO（生产）、服务器域名与域名 ICP 备案依赖（小程序侧；小程序备案已完成）。
 
-当前状态：**M1 骨架 + 多老师认证 + 版本化迁移已落盘（2026-11-23）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up；`go build/vet/test` 与 `/healthz`、`/readyz` 已本地验证；前端教师登录/成员管理页通过 `vue-tsc`，`mp-weixin` 构建成功。**尚未**连 MySQL 实跑迁移与登录、未连云托管 `dev`。不要假设任何业务接口、表数据、页面已完成。
+当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM 核心（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**待** 云托管重新部署验证 M2 新接口、Excel 导入、标签/回访编辑与家长端明细。不要假设任何业务接口、表数据、页面已完成。
 
 ## 1. 开始任何任务前
 

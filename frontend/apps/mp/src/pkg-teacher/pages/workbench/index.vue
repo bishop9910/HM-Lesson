@@ -1,33 +1,76 @@
 <script setup lang="ts">
-import { onLoad } from "@dcloudio/uni-app";
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
 import { ApiError, request } from "@/utils/request";
 import { useSessionStore } from "@/stores/session";
 
-const session = useSessionStore();
+interface Summary {
+  students_total: number;
+  submissions_pending: number;
+  bookings_pending: number;
+  low_balance_students: number;
+  staff_total: number;
+}
 
-onLoad(async () => {
+const session = useSessionStore();
+const summary = ref<Summary | null>(null);
+const loading = ref(false);
+const errorText = ref("");
+
+const todos = computed(() => {
+  if (!summary.value) return [];
+  return [
+    { title: "待批阅作业", value: summary.value.submissions_pending },
+    { title: "待审核预约", value: summary.value.bookings_pending },
+    { title: "课时不足提醒", value: summary.value.low_balance_students },
+  ];
+});
+
+async function load(): Promise<void> {
   if (!session.isTeacher) {
     uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
     return;
   }
+  loading.value = true;
+  errorText.value = "";
   try {
     await request("/api/v1/auth/me", "GET");
+    const res = await request<{ summary: Summary }>("/api/v1/dashboard/summary", "GET");
+    summary.value = res.summary;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       session.clear();
       uni.reLaunch({ url: "/pkg-teacher/pages/login/index" });
+      return;
     }
+    if (err instanceof ApiError) {
+      errorText.value = err.message;
+    } else {
+      errorText.value = "加载失败，请稍后重试";
+    }
+  } finally {
+    loading.value = false;
   }
-});
+}
 
-const todos = [
-  { title: "待批阅作业", value: "2", hint: "含 1 份逾期提交" },
-  { title: "待审核预约", value: "1", hint: "今天 18:00 前处理" },
-  { title: "课时不足提醒", value: "1", hint: "余额 ≤ 2 课时" },
-];
+onShow(() => {
+  void load();
+});
 
 function goStaff(): void {
   uni.navigateTo({ url: "/pkg-teacher/pages/staff/index" });
+}
+
+function goStudents(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/students/index" });
+}
+
+function goGuardians(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/guardians/index" });
+}
+
+function goImport(): void {
+  uni.navigateTo({ url: "/pkg-teacher/pages/import/index" });
 }
 
 function logout(): void {
@@ -39,21 +82,25 @@ function logout(): void {
 <template>
   <view class="page">
     <view class="header">
-      <text class="title">教师工作台</text>
+      <text class="title">工作台</text>
       <text class="who">{{ session.staffName || "老师" }} · {{ session.role }}</text>
     </view>
 
+    <view v-if="errorText" class="error">{{ errorText }}</view>
+    <view v-else-if="loading" class="hint">正在同步…</view>
+
     <view v-for="item in todos" :key="item.title" class="row">
-      <view class="row-main">
-        <text class="row-title">{{ item.title }}</text>
-        <text class="row-hint">{{ item.hint }}</text>
-      </view>
+      <text class="row-title">{{ item.title }}</text>
       <text class="row-value">{{ item.value }}</text>
     </view>
 
-    <button v-if="session.isOwner" class="primary" @click="goStaff">成员管理</button>
-    <button class="ghost" @click="logout">退出登录</button>
-    <text class="footnote">M1 骨架：批阅/审核页面按 M2 接入；账号与成员管理已接通。</text>
+    <view class="tools">
+      <button class="primary" @click="goStudents">学员档案</button>
+      <button v-if="session.isOwner" class="ghost" @click="goGuardians">绑定审批</button>
+      <button v-if="session.isOwner" class="ghost" @click="goImport">导入学员</button>
+      <button v-if="session.isOwner" class="ghost" @click="goStaff">成员管理</button>
+      <button class="ghost" @click="logout">退出登录</button>
+    </view>
   </view>
 </template>
 
@@ -83,6 +130,18 @@ function logout(): void {
   color: $hm-muted;
 }
 
+.hint,
+.error {
+  display: block;
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: $hm-muted;
+}
+
+.error {
+  color: #b91c1c;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -94,20 +153,9 @@ function logout(): void {
   border-radius: $hm-radius;
 }
 
-.row-main {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
 .row-title {
   font-size: 30rpx;
   font-weight: 600;
-}
-
-.row-hint {
-  font-size: 22rpx;
-  color: $hm-muted;
 }
 
 .row-value {
@@ -116,9 +164,15 @@ function logout(): void {
   color: $hm-accent;
 }
 
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  margin-top: 40rpx;
+}
+
 .primary,
 .ghost {
-  margin-top: 40rpx;
   height: 88rpx;
   line-height: 88rpx;
   border-radius: 44rpx;
@@ -128,16 +182,8 @@ function logout(): void {
 }
 
 .primary {
-  margin-top: 20rpx;
   background: $hm-primary;
   border-color: $hm-primary;
   color: #ffffff;
-}
-
-.footnote {
-  display: block;
-  margin-top: 24rpx;
-  font-size: 22rpx;
-  color: $hm-muted;
 }
 </style>

@@ -25,7 +25,7 @@ func main() {
 	logger := newLogger(cfg.LogLevel())
 	slog.SetDefault(logger)
 
-	authSrv, db := buildAuth(cfg, logger)
+	authSrv, db := buildServices(cfg, logger)
 
 	srv := khttp.NewServer(
 		khttp.Address(cfg.HTTPAddr),
@@ -48,10 +48,34 @@ func main() {
 
 	// 多老师账号：登录公开；成员管理仅 owner。
 	router.POST("/api/v1/auth/login", authSrv.Login)
+	router.POST("/api/v1/auth/staff/login", authSrv.Login)
+	router.POST("/api/v1/auth/bind-request", authSrv.RequestBind)
 	router.GET("/api/v1/auth/me", authSrv.Me)
 	router.GET("/api/v1/staff", authSrv.ListStaff)
 	router.POST("/api/v1/staff", authSrv.CreateStaff)
 	router.PATCH("/api/v1/staff/{id}", authSrv.UpdateStaff)
+	router.GET("/api/v1/dashboard/summary", authSrv.DashboardSummary)
+
+	// M2：客户档案、跟进、家长审批/绑定、家长门户。
+	router.GET("/api/v1/students", authSrv.ListStudents)
+	router.POST("/api/v1/students", authSrv.CreateStudent)
+	router.GET("/api/v1/students/{id}", authSrv.GetStudent)
+	router.PATCH("/api/v1/students/{id}", authSrv.UpdateStudent)
+	router.GET("/api/v1/students/{id}/follow-ups", authSrv.ListFollowUps)
+	router.POST("/api/v1/students/{id}/follow-ups", authSrv.CreateFollowUp)
+	router.POST("/api/v1/students/{id}/binding-codes", authSrv.CreateBindingCode)
+	router.GET("/api/v1/guardians/pending", authSrv.PendingGuardians)
+	router.POST("/api/v1/guardians/{id}/approve", authSrv.ApproveGuardian)
+	router.POST("/api/v1/guardians/{id}/reject", authSrv.RejectGuardian)
+	router.POST("/api/v1/auth/guardian/login", authSrv.GuardianLogin)
+	router.GET("/api/v1/portal/home", authSrv.PortalHome)
+
+	// M2：Excel 学员导入。
+	router.GET("/api/v1/imports/students/template", authSrv.ImportTemplate)
+	router.POST("/api/v1/imports/students/preview", authSrv.PreviewStudentsImport)
+	router.GET("/api/v1/imports/{id}", authSrv.GetImportBatch)
+	router.POST("/api/v1/imports/{id}/commit", authSrv.CommitStudentsImport)
+	router.POST("/api/v1/imports/{id}/rollback", authSrv.RollbackImportBatch)
 
 	app := kratos.New(
 		kratos.Name("hm-api"),
@@ -65,10 +89,10 @@ func main() {
 	}
 }
 
-func buildAuth(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm.DB) {
+func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm.DB) {
 	if cfg.DBDSN == "" {
 		logger.Warn("HM_DB_DSN 未配置，仅健康检查可用；登录/成员接口返回 503")
-		return service.New(nil, nil), nil
+		return service.New(nil, nil, nil, nil, nil, nil), nil
 	}
 	db, err := data.Open(cfg.DBDSN)
 	if err != nil {
@@ -97,7 +121,11 @@ func buildAuth(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm.DB)
 	} else if cfg.BootstrapPhone == "" {
 		logger.Warn("库中没有老师账号，且未配置 HM_BOOTSTRAP_PHONE/HM_BOOTSTRAP_PASSWORD；请配置后重启")
 	}
-	return service.New(uc, issuer), db
+	dashboard := biz.NewDashboardUsecase(data.NewDashboardRepo(db))
+	bind := biz.NewBindUsecase(data.NewGuardianRepo(db))
+	crm := biz.NewCRMUsecase(data.NewCRMRepo(db))
+	importUC := biz.NewImportUsecase(data.NewImportRepo(db))
+	return service.New(uc, dashboard, bind, crm, importUC, issuer), db
 }
 
 func newLogger(level slog.Level) *slog.Logger {

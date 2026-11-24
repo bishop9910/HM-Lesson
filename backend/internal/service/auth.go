@@ -14,12 +14,16 @@ import (
 )
 
 type Server struct {
-	uc     *biz.AuthUsecase
-	tokens *token.Issuer
+	uc        *biz.AuthUsecase
+	dashboard *biz.DashboardUsecase
+	bind      *biz.BindUsecase
+	crm       *biz.CRMUsecase
+	importUC  *biz.ImportUsecase
+	tokens    *token.Issuer
 }
 
-func New(uc *biz.AuthUsecase, tokens *token.Issuer) *Server {
-	return &Server{uc: uc, tokens: tokens}
+func New(uc *biz.AuthUsecase, dashboard *biz.DashboardUsecase, bind *biz.BindUsecase, crm *biz.CRMUsecase, importUC *biz.ImportUsecase, tokens *token.Issuer) *Server {
+	return &Server{uc: uc, dashboard: dashboard, bind: bind, crm: crm, importUC: importUC, tokens: tokens}
 }
 
 type loginRequest struct {
