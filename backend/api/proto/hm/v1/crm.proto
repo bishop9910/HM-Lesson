@@ -12,10 +12,10 @@ service StudentService {
   rpc ListStudents(ListStudentsRequest) returns (ListStudentsResponse) {
     option (google.api.http) = { get: "/api/v1/students" };
   }
-  rpc GetStudent(GetStudentRequest) returns (Student) {
+  rpc GetStudent(GetStudentRequest) returns (GetStudentResponse) {
     option (google.api.http) = { get: "/api/v1/students/{id}" };
   }
-  rpc CreateStudent(CreateStudentRequest) returns (Student) {
+  rpc CreateStudent(CreateStudentRequest) returns (CreateStudentResponse) {
     option (google.api.http) = {
       post: "/api/v1/students"
       body: "*"
@@ -51,6 +51,10 @@ message GetStudentRequest {
   string id = 1;
 }
 
+message GetStudentResponse {
+  Student student = 1;
+}
+
 message CreateStudentRequest {
   string name = 1;
   string grade = 2;
@@ -58,4 +62,8 @@ message CreateStudentRequest {
   string group = 4;
   repeated string tags = 5;
   string note = 6;
+}
+
+message CreateStudentResponse {
+  Student student = 1;
 }

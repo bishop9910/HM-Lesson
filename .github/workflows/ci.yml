@@ -29,8 +29,6 @@ jobs:
         with:
           version: "1.75.0"
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: buf deps
-        run: buf dep update
       - name: buf lint
         run: buf lint
 

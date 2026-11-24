@@ -3,7 +3,6 @@ syntax = "proto3";
 package hm.v1;
 
 import "google/api/annotations.proto";
-import "hm/v1/common.proto";
 
 option go_package = "github.com/bishop9910/hm-lesson/backend/gen/hm/v1;hmv1";
 
@@ -15,10 +14,10 @@ service AuthService {
       body: "*"
     };
   }
-  rpc Me(Empty) returns (MeResponse) {
+  rpc Me(MeRequest) returns (MeResponse) {
     option (google.api.http) = { get: "/api/v1/auth/me" };
   }
-  rpc Logout(Empty) returns (Empty) {
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
     option (google.api.http) = { post: "/api/v1/auth/logout" };
   }
 }
@@ -33,9 +32,15 @@ message LoginResponse {
   Staff staff = 2;
 }
 
+message MeRequest {}
+
 message MeResponse {
   Staff staff = 1;
 }
+
+message LogoutRequest {}
+
+message LogoutResponse {}
 
 message Staff {
   string id = 1;
