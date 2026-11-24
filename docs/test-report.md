@@ -1,6 +1,6 @@
 # 测试报告 · HM-Lesson
 
-> 状态：**M1 骨架 + 多老师认证**（2026-11-23）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移代码与单元测试；前端完成教师登录/成员管理、类型检查与 mp-weixin 构建；**尚未连 MySQL 实测迁移/登录**，云托管契约测试未执行。没有真实执行过的测试不得写“通过”。
+> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移；前端完成教师登录/成员管理、类型检查与 mp-weixin 构建；**已在微信云托管连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录**。没有真实执行过的测试不得写“通过”。
 > 维护：每完成一个里程碑追加一轮记录；没有真实执行过的测试不得写“通过”。
 
 ## 1. 环境
@@ -28,9 +28,12 @@
 | 2026-11-23 | 前端类型检查 | `node_modules/.bin/vue-tsc --noEmit -p tsconfig.json` | **通过** | 新增教师登录/成员管理页后退出码 0 |
 | 2026-11-23 | 小程序构建 | `node_modules/.bin/uni build -p mp-weixin` | **通过** | 新增 login/staff 分包页后构建成功；仅 Sass `@import`/legacy 告警 |
 | 2026-11-24 | 迁移执行器单测 | `go test ./... -count=1` | **通过** | 新增 `internal/data` 的 `TestLoadMigrations`（2 个版本、up/down 成对）与 `TestSplitSQL`；biz/conf/password/token 同时通过；未连 MySQL |
-| 2026-11-24 | MySQL 5.7.18 兼容调整 | `gofmt -l`、`go build/vet/test`、Linux amd64 交叉构建 | **通过** | 仅代码/单元与构建；真实 5.7.18 上执行迁移仍未验证（待云托管首次启动） |
+| 2026-11-24 | MySQL 5.7.18 兼容调整 | `gofmt -l`、`go build/vet/test`、Linux amd64 交叉构建 | **通过** | 代码/单元与构建通过；真实 5.7.18 上迁移已在云托管首次启动验证 |
+| 2026-11-24 | 云托管部署 | GitHub 仓库绑定 → 构建镜像 → 启动 `hm-lesson-003` | **通过** | 运行镜像 Debian 12；服务 `hm-lesson`，环境 `prod-d8gq8vzftc39caa5b` |
+| 2026-11-24 | 云托管健康检查 | `GET /healthz`、`GET /readyz` | **通过** | 返回 `{"status":"ok","version":"0.1.0"}`、`{"status":"ready"}` |
+| 2026-11-24 | 云托管登录 | `POST /api/v1/auth/login` | **通过** | 返回 `staff.role=owner`、`staff.status=active`、JWT；`expires_at=2026-11-24T11:37:24Z`（2h） |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
-| — | 版本化迁移 | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；待 Debian/CI 或云托管 dev |
+| — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |
 
 ## 3. 手工验收（TC-01 ~ TC-17）
 

@@ -18,8 +18,9 @@ interface CloudApi {
 }
 
 const cloud = (globalThis as unknown as { wx?: { cloud?: CloudApi } }).wx?.cloud;
-const cloudEnv = import.meta.env.VITE_WX_CLOUD_ENV_ID ?? "";
-const serviceName = import.meta.env.VITE_WX_SERVICE ?? "hm-api";
+// 生产默认值：当前只有一个云托管环境；本地/未来多环境可用 VITE_* 覆盖。
+const cloudEnv = import.meta.env.VITE_WX_CLOUD_ENV_ID ?? "prod-d8gq8vzftc39caa5b";
+const serviceName = import.meta.env.VITE_WX_SERVICE ?? "hm-lesson";
 
 export class ApiError extends Error {
   constructor(
