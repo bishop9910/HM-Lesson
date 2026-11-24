@@ -12,8 +12,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags "-s -w -X github.com/bishop9910/hm-lesson/backend/internal/version.Version=${VERSION}" \
     -o /out/hm ./cmd/hm
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+# 运行镜像必须用 Debian/Ubuntu 系：云托管会注入 /app/cert/initenv.sh
+# 做证书/环境变量初始化，该脚本对 Alpine 的 update-ca-certificates 不兼容。
+FROM debian:12-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/hm /app/hm
 EXPOSE 80

@@ -9,10 +9,12 @@ COPY . .
 ARG VERSION=0.1.0
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X github.com/bishop9910/hm-lesson/backend/internal/version.Version=${VERSION}" -o /out/hm ./cmd/hm
 
-# 运行镜像用 Alpine（Docker Hub 可达性优于 gcr.io；云托管构建更容易拉取）。
-# MVP 以 root 运行以便直接监听 80；后续可改 8080 + 非 root 用户。
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates
+# 运行镜像必须用 Debian/Ubuntu 系：云托管会注入 /app/cert/initenv.sh
+# 做证书/环境变量初始化，该脚本对 Alpine 的 update-ca-certificates 不兼容。
+FROM debian:12-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/hm /app/hm
 EXPOSE 80
