@@ -348,6 +348,11 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	if guardian == nil || guardian.Status != "active" {
 		return fail(ctx, http.StatusForbidden, "BIND_PENDING", "绑定尚未通过")
 	}
+	if len(students) == 0 {
+		if home, herr := s.crm.PortalHome(ctx, guardian.ID); herr == nil {
+			students = home.Students
+		}
+	}
 	tok, exp, err := s.tokens.Issue(guardian.ID, "guardian", guardian.Phone, biz.NewID())
 	if err != nil {
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "登录失败")

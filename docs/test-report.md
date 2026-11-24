@@ -58,7 +58,8 @@
 | 2026-11-24 | 首页/工作台视觉重做 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 首页/工作台统一纸张台账主题；首页按钮两列铺满再换行；工作台无 `gap` 两列布局；入口改为 `pages/home/index` 以避开旧 WXML/JS 缓存；编译后 app.json 首屏为新路径，WXML 无原始值；产物 268,563 字节 / 81 文件 |
 | 2026-11-24 | 弹层表单挤压修复 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 学员/任务/批阅四个底部弹层改为纸面主题、`max-height:88vh` + 滚动、输入框固定 88rpx 行高、字段间距统一；`$hm-bg/$hm-surface/$hm-text/$hm-border` 全站切换为纸面令牌；产物 271,395 字节 / 81 文件；未做真机视觉验收 |
 | 2026-11-24 | 生产家长绑定码 + 门户 | 生成 6 位码 → 家长手机号+码登录 → `/portal/home` → `/portal/students/{id}` | **通过** | 家长 `13000000000` 原为 active 未关联学员；绑定码 `024961` 兑换后自动建立 `student_guardians`，门户返回学员 test、余额 0、作业/流水空；详情不含 `note/tags`（D-05 已上线） |
-| 2026-11-24 | 生产 M3 发布 + 家长任务 | 教师建任务 → 发布 → `GET /portal/tasks` | **失败** | 发布返回 `assigned:1`；家长任务列表 500 `{"message":"任务操作失败","reason":"INTERNAL"}`；根因 `student_guardians` 无 `status` 列，见 D-09；教师任务详情/统计正常 |
+| 2026-11-24 | 生产 M3 发布 + 家长任务 | 教师建任务 → 发布 → `GET /portal/tasks` | **失败→已修复** | 发布返回 `assigned:1`；修复前家长任务列表 500；D-09 修复部署后复测 200，见下一行 |
+| 2026-11-24 | 生产 M3 全链路 | `/portal/tasks` → 提交 v1 → 打回 → 重交 v2 → 评分批阅 → 档案 | **通过** | 提交 v1 200 `is_late=false`；打回 200，家长看到 `returned` + 理由；重交 v2 200；评分 88 后 assignment `reviewed`、history=2；`/portal/archive` 200；任务统计 `submitted=1/reviewed=1/pending_review=0/rate=1`；仅文字提交，图片 fileID 未实测 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |
 
@@ -66,12 +67,12 @@
 
 | 编号 | 场景 | 结果 | 证据/备注 |
 | --- | --- | --- | --- |
-| TC-01 | 家长绑定与审批后可见 | 未执行 | |
-| TC-02 | 家长只能看到本人学员 | 未执行 | |
-| TC-03 | 任务下发按人生成提交记录 | 未执行（代码/构建通过） | 发布事务按 `student_ids` 一人一条 assignment；待云托管部署实测 |
-| TC-04 | 作业提交（文字+多图） | 未执行（代码/构建通过） | 家长文字 + 图片 fileID；待部署实测 |
-| TC-05 | 打回→重交→再批阅 | 未执行（代码/构建通过） | 打回理由必填；重交 version+1；待部署实测 |
-| TC-06 | 逾期提交仍可交并标记 | 未执行（代码/构建通过） | `is_late=now>due`；待部署实测 |
+| TC-01 | 家长绑定与审批后可见 | 部分通过 | 绑定码路径已生产验证（024961 → 门户可见 test）；审批路径待 D-10 部署后验证 |
+| TC-02 | 家长只能看到本人学员 | 通过（生产） | `/portal/students/{id}` 用他人学员 id 返回 404 `STUDENT_NOT_FOUND` |
+| TC-03 | 任务下发按人生成提交记录 | 通过（生产） | 发布 `assigned:1`，生成 1 条 pending assignment |
+| TC-04 | 作业提交（文字+多图） | 部分通过 | 生产验证文字提交；图片 fileID 路径未实测 |
+| TC-05 | 打回→重交→再批阅 | 通过（生产） | v1 提交→打回（理由）→v2 重交→评分 88，history=2，家长档案可见 |
+| TC-06 | 逾期提交仍可交并标记 | 未执行 | `is_late=now>due` 已实现，需用已过期任务实测 |
 | TC-07 | 家长只看到可预约时段 | 未执行 | |
 | TC-08 | 并发预约同一时段只有一条成功 | 未执行 | 高危 |
 | TC-09 | 驳回释放时段并通知 | 未执行 | |
@@ -102,8 +103,9 @@
 | D-06 | 无 token 请求返回 401 JSON 后又追加 500 JSON | 高 | 已修复，待部署 | `fail()` 写响应后返回 sentinel error，并配置 `khttp.ErrorEncoder` 识别 `X-HM-Handled`，避免 Kratos 二次编码 |
 | D-07 | `PATCH /task-templates/{id}` 返回 `created_by=""`、`created_at` 为零值 | 中 | 已修复，待部署 | 更新后重新 SELECT 整行回填 |
 | D-08 | 新增学员/新建任务/批阅弹层顶部字段被裁切、字段拥挤，弹层主题与首页不一致 | 高 | 已修复，待真机验收 | 弹层未限制高度且无滚动，内容超出视口；输入框未设固定高度导致原生 placeholder 纵向裁切。四个弹层统一 `max-height:88vh + overflow-y:auto`、输入框 `height:88rpx/line-height:88rpx`、字段间距 20rpx；纸张令牌全站生效 |
-| D-09 | 生产 `GET /api/v1/portal/tasks` 500 `任务操作失败` | 高 | 已修复，待部署 | `internal/data/task.go` 的家长任务/提交查询误用 `student_guardians.status`（该表无 status 列），改为只校验 `guardians.status='active'`；`portalAssignments` 与 `Submit` 两处均已修 |
-| D-10 | 家长提交绑定申请后直接 active、未关联学员，待审批列表看不到，无法审批 | 高 | 已修复，待部署 | `ListPendingGuardians`/`ApproveGuardian`/`RejectGuardian` 只查 `status='pending'`；改为同时接受 `active && NOT EXISTS(student_guardians)`，老师可把未绑定的 active 家长分配到学员 |
+| D-09 | 生产 `GET /api/v1/portal/tasks` 500 `任务操作失败` | 高 | 已修复并线上复测 | `internal/data/task.go` 的家长任务/提交查询误用 `student_guardians.status`（该表无 status 列），改为只校验 `guardians.status='active'`；`portalAssignments` 与 `Submit` 两处均已修；2026-11-24 部署后家长任务/提交/打回/重交/批阅全链路通过 |
+| D-10 | 家长提交绑定申请后直接 active、未关联学员，待审批列表看不到，无法审批 | 高 | 已修复，待生产验证 | `ListPendingGuardians`/`ApproveGuardian`/`RejectGuardian` 只查 `status='pending'`；改为同时接受 `active && NOT EXISTS(student_guardians)`，老师可把未绑定的 active 家长分配到学员 |
+| D-11 | 家长用手机号直接登录时返回 `students: []`，用绑定码登录才返回学员 | 低 | 已修复，待部署 | `GuardianLogin` 的手机号路径只取 guardian 未查学员；补 `PortalHome` 回填 `students`，portal 本身不受影响 |
 
 
 
