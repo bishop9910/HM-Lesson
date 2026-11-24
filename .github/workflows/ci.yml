@@ -28,6 +28,7 @@ jobs:
         uses: bufbuild/buf-setup-action@v1
         with:
           version: "1.75.0"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: buf deps
         run: buf dep update
       - name: buf lint
