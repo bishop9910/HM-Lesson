@@ -41,6 +41,23 @@ func toStudentDTO(s biz.Student) studentDTO {
 	return d
 }
 
+type portalStudentDTO struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Grade     string `json:"grade"`
+	School    string `json:"school"`
+	GroupCode string `json:"group_code"`
+	Status    string `json:"status"`
+}
+
+// toPortalStudentDTO 只暴露家长可见字段，刻意不含老师备注、标签与回访时间。
+func toPortalStudentDTO(s biz.Student) portalStudentDTO {
+	return portalStudentDTO{
+		ID: s.ID, Name: s.Name, Grade: s.Grade, School: s.School,
+		GroupCode: s.GroupCode, Status: s.Status,
+	}
+}
+
 type followUpDTO struct {
 	ID           string  `json:"id"`
 	Method       string  `json:"method"`
@@ -396,7 +413,7 @@ func (s *Server) PortalStudent(ctx khttp.Context) error {
 		expires = detail.ExpiresAt.Format("2006-01-02")
 	}
 	return ctx.JSON(http.StatusOK, map[string]any{
-		"student":       toStudentDTO(detail.Student),
+		"student":       toPortalStudentDTO(detail.Student),
 		"tasks":         tasks,
 		"balance_hours": detail.BalanceHours,
 		"expires_at":    expires,
@@ -413,9 +430,9 @@ func (s *Server) PortalHome(ctx khttp.Context) error {
 	if err != nil {
 		return mapCRMBizError(ctx, err)
 	}
-	students := make([]studentDTO, 0, len(home.Students))
+	students := make([]portalStudentDTO, 0, len(home.Students))
 	for _, st := range home.Students {
-		students = append(students, toStudentDTO(st))
+		students = append(students, toPortalStudentDTO(st))
 	}
 	return ctx.JSON(http.StatusOK, map[string]any{
 		"guardian":      map[string]any{"name": home.GuardianName, "phone": home.GuardianPhone},

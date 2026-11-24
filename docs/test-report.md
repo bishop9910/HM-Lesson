@@ -1,6 +1,6 @@
 # 测试报告 · HM-Lesson
 
-> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请，以及 M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/Excel 导入接口；前端完成教师学员/跟进/审批/导入页与家长登录/门户页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录**，M2 新接口与 000003 迁移待重新部署验证。没有真实执行过的测试不得写“通过”。
+> 状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入**（2026-11-24）。backend 已完成 Kratos v3 接入、多老师认证/成员管理、版本化迁移、真实汇总、绑定申请，以及 M2 学员/跟进/绑定审批/绑定码/guardian 登录/家长门户/家长端学员详情/Excel 导入接口；前端完成教师学员/跟进/审批/导入页与家长登录/门户/学员详情页；**云托管已连接 MySQL 5.7.18 实测迁移、健康检查、owner 登录、dashboard、学员档案编辑、家长端学员详情与 Excel 全链路**。家长端隐私字段修复待下次部署验证。没有真实执行过的测试不得写“通过”。
 > 维护：每完成一个里程碑追加一轮记录；没有真实执行过的测试不得写“通过”。
 
 ## 1. 环境
@@ -36,6 +36,10 @@
 | 2026-11-24 | 公网 401 守卫 | 无 token 访问 students/guardians/imports | **通过** | 均返回 401 `UNAUTHORIZED`；带 token 后 staff 列表正常 |
 | 2026-11-24 | 公网 Excel 导入全链路 | template → preview → commit → students → rollback | **通过** | 模板 8,552 字符 base64；1 行预览 `to_create=1`；提交 `created_rows=1`；学员列表可查；回滚后列表为空 |
 | 2026-11-24 | 公网 dashboard | `GET /api/v1/dashboard/summary` | **失败** | 500 `读取汇总失败`；根因 SQL 查了 `submissions.status`（该表无 status，应为 `task_assignments.status='submitted'`）；已在本机修复，待推送部署复测 |
+| 2026-11-24 | 公网 dashboard（部署后复测） | `GET /api/v1/dashboard/summary` | **通过** | 2026-11-24 19:55 实测 200，返回 `students_total=0/submissions_pending=0/bookings_pending=0/low_balance_students=0/staff_total=1`；说明 `d1d8fbc` 已真正部署 |
+| 2026-11-24 | 公网家长端学员详情 | `GET /api/v1/portal/students/{id}`（guardian token） | **通过** | 200，返回剩余课时/作业/流水；用另一学员 id 返回 404 `STUDENT_NOT_FOUND`，绑定校验生效 |
+| 2026-11-24 | 公网学员档案编辑 | `PATCH /api/v1/students/{id}` | **通过** | 200，年级/学校/分组/标签/回访/备注全部更新成功，再次 GET 一致 |
+| 2026-11-24 | 家长端隐私字段 | 检查 `/portal/home` 与 `/portal/students/{id}` 响应 | **已修复（待部署）** | 原响应复用了教师 DTO，包含 `note`/`tags`/`next_follow_up_at`；已改为 `portalStudentDTO`，只返回 id/姓名/年级/学校/分组/状态 |
 | 2026-11-24 | 首页/工作台接入真实汇总 | `GET /api/v1/dashboard/summary` | **通过（构建）** | 后端查询 `students/submissions/bookings/lesson_accounts/staff` 真实计数；前端 `vue-tsc` 与 `uni build` 通过；云托管接口待下次部署后验证 |
 | 2026-11-24 | 家长绑定申请落库 | `POST /api/v1/auth/bind-request` | **通过（单测）** | `internal/biz` 覆盖手机号校验、空仓库；真实云托管待部署后验证 |
 | 2026-11-24 | M2 CRM 后端 | `gofmt -l`、`go build ./...`、`go vet ./...`、`go test ./... -count=1` | **通过** | 新增 `internal/biz/crm.go`、`internal/data/crm.go`、`internal/service/crm.go`；编译/静态检查/既有测试通过；CRM 尚无专门单测 |
