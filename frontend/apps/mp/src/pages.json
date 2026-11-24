@@ -24,6 +24,10 @@
     {
       "path": "pages/portal/index",
       "style": { "navigationBarTitleText": "家长门户" }
+    },
+    {
+      "path": "pages/portal/student",
+      "style": { "navigationBarTitleText": "学员详情" }
     }
   ],
   "subPackages": [

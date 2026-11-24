@@ -65,6 +65,10 @@ function logout(): void {
 function goHome(): void {
   uni.reLaunch({ url: "/pages/index/index" });
 }
+
+function openStudent(id: string): void {
+  uni.navigateTo({ url: `/pages/portal/student?id=${encodeURIComponent(id)}` });
+}
 </script>
 
 <template>
@@ -101,7 +105,7 @@ function goHome(): void {
         <text class="empty-hint">请让老师通过你的绑定申请。</text>
       </view>
 
-      <view v-for="student in home.students" :key="student.id" class="card">
+      <view v-for="student in home.students" :key="student.id" class="card" @click="openStudent(student.id)">
         <view class="card-top">
           <text class="name">{{ student.name }}</text>
           <text class="badge">{{ groupLabels[student.group_code] || student.group_code }}</text>

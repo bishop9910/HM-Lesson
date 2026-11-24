@@ -74,6 +74,33 @@ type PortalHome struct {
 	GuardianPhone string
 }
 
+// PortalTask 是家长端展示的待办作业摘要。
+type PortalTask struct {
+	ID     string
+	Title  string
+	Status string
+	DueAt  *time.Time
+}
+
+// PortalLesson 是家长端展示的课时流水。
+type PortalLesson struct {
+	ID           string
+	Kind         string
+	DeltaHours   float64
+	BalanceAfter float64
+	Note         string
+	CreatedAt    time.Time
+}
+
+// PortalStudent 是家长端单个学员的详情聚合。
+type PortalStudent struct {
+	Student      Student
+	Tasks        []PortalTask
+	BalanceHours float64
+	ExpiresAt    *time.Time
+	Lessons      []PortalLesson
+}
+
 type StudentFilter struct {
 	Group    string
 	Status   string
@@ -119,6 +146,7 @@ type CRMRepo interface {
 	RedeemBindingCode(ctx context.Context, phone, code string) (*GuardianRequest, []Student, error)
 	GuardianByPhone(ctx context.Context, phone string) (*GuardianRequest, error)
 	PortalHome(ctx context.Context, guardianID string) (*PortalHome, error)
+	PortalStudent(ctx context.Context, guardianID, studentID string) (*PortalStudent, error)
 }
 
 type CRMUsecase struct {
@@ -255,4 +283,11 @@ func (uc *CRMUsecase) GuardianByPhone(ctx context.Context, phone string) (*Guard
 
 func (uc *CRMUsecase) PortalHome(ctx context.Context, guardianID string) (*PortalHome, error) {
 	return uc.repo.PortalHome(ctx, guardianID)
+}
+
+func (uc *CRMUsecase) PortalStudent(ctx context.Context, guardianID, studentID string) (*PortalStudent, error) {
+	if strings.TrimSpace(studentID) == "" {
+		return nil, ErrStudentNotFound
+	}
+	return uc.repo.PortalStudent(ctx, guardianID, studentID)
 }

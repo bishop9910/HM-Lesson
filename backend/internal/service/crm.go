@@ -366,6 +366,44 @@ func (s *Server) requireGuardian(ctx khttp.Context) (string, error) {
 	return claims.Subject, nil
 }
 
+func (s *Server) PortalStudent(ctx khttp.Context) error {
+	gid, err := s.requireGuardian(ctx)
+	if err != nil {
+		return err
+	}
+	detail, err := s.crm.PortalStudent(ctx, gid, ctx.Vars().Get("id"))
+	if err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	tasks := make([]map[string]any, 0, len(detail.Tasks))
+	for _, t := range detail.Tasks {
+		item := map[string]any{"id": t.ID, "title": t.Title, "status": t.Status}
+		if t.DueAt != nil {
+			item["due_at"] = t.DueAt.UTC().Format("2006-01-02T15:04:05Z")
+		}
+		tasks = append(tasks, item)
+	}
+	lessons := make([]map[string]any, 0, len(detail.Lessons))
+	for _, l := range detail.Lessons {
+		lessons = append(lessons, map[string]any{
+			"id": l.ID, "kind": l.Kind, "delta_hours": l.DeltaHours,
+			"balance_after": l.BalanceAfter, "note": l.Note,
+			"created_at": l.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	var expires any
+	if detail.ExpiresAt != nil {
+		expires = detail.ExpiresAt.Format("2006-01-02")
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{
+		"student":       toStudentDTO(detail.Student),
+		"tasks":         tasks,
+		"balance_hours": detail.BalanceHours,
+		"expires_at":    expires,
+		"lessons":       lessons,
+	})
+}
+
 func (s *Server) PortalHome(ctx khttp.Context) error {
 	gid, err := s.requireGuardian(ctx)
 	if err != nil {

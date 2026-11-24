@@ -42,6 +42,8 @@
 | 2026-11-24 | M2 CRM 前端 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 新增学员列表/详情、绑定审批、家长登录/门户页；产物 201,973 字节；仅 Sass `@import`/legacy 告警 |
 | 2026-11-24 | Excel 导入后端 | `go build/vet/test` | **通过** | `pkg/xlsximport` 解析/模板单测通过；`internal/data` 迁移数 3；导入接口未连 MySQL 实测 |
 | 2026-11-24 | Excel 导入前端 | `vue-tsc --noEmit`、`uni build -p mp-weixin` | **通过（构建）** | 新增 `pkg-teacher/pages/import/index.vue`；模板下载/选择文件/预览/提交/回滚；仅 Sass 告警 |
+| 2026-11-24 | M2 学员档案编辑 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 学员详情增加年级/学校/分组/标签/下次回访/备注编辑；后端复用 PATCH；未连 MySQL 实测 |
+| 2026-11-24 | M2 家长端学员详情 | `go build/vet/test`、`vue-tsc`、`uni build` | **通过（构建）** | 新增 `GET /api/v1/portal/students/{id}` 与 `pages/portal/student.vue`：剩余课时、作业状态、课时流水；未连 MySQL 实测 |
 | — | M2 CRM 云端实测 | 部署新镜像后走 TC-01/TC-02 | 未执行 | 云托管仍是 M1 镜像；需 push 后重建部署 |
 | — | proto lint/生成 | `buf lint`、`make api` | 未执行 | 需要下载 buf 远程插件/依赖，未获授权 |
 | — | 版本化迁移（本地） | 启动 `data.Migrate`（MySQL） | 未执行 | 本机无 Docker/MySQL；云托管启动已验证 |

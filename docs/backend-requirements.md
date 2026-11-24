@@ -470,7 +470,7 @@ backend/
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
 
-> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`。表中其余接口为规划，尚未实现，前端不得假设可用。
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 
@@ -570,6 +570,7 @@ backend/
 | 方法 | 路径 | 角色 | 说明 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/portal/home` | G | 家长首页聚合：孩子、待办数、5 卡片摘要 |
+| GET | `/api/v1/portal/students/{id}` | G | 家长端学员详情：剩余课时、作业状态、课时流水（M2 已实现） |
 | GET | `/api/v1/portal/tasks` | G | 待办/已批阅 |
 | GET | `/api/v1/portal/tasks/{assignment_id}` | G | 详情 |
 | POST | `/api/v1/portal/tasks/{assignment_id}/submissions` | G | 提交/重交 |

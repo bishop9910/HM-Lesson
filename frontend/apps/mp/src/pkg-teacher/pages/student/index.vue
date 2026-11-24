@@ -53,6 +53,21 @@ const followOpen = ref(false);
 const follow = ref({ method: "wechat", content: "", concern: "", next_action: "" });
 const code = ref("");
 const codeExpires = ref("");
+const editOpen = ref(false);
+const groupOptions = [
+  { value: "class_active", label: "班课在读" },
+  { value: "one_on_one", label: "一对一在读" },
+  { value: "intent", label: "待转化意向" },
+  { value: "visitor", label: "咨询访客" },
+];
+const editForm = ref({
+  grade: "",
+  school: "",
+  group_code: "visitor",
+  tags: "",
+  next_follow_up_at: "",
+  note: "",
+});
 
 const statusLabel = computed(() => {
   if (!student.value) return "";
@@ -94,6 +109,60 @@ async function changeStatus(value: string): Promise<void> {
     uni.showToast({ title: "已更新", icon: "success" });
   } catch (err) {
     uni.showToast({ title: err instanceof ApiError ? err.message : "更新失败", icon: "none" });
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openEdit(): void {
+  if (!student.value) return;
+  editForm.value = {
+    grade: student.value.grade,
+    school: student.value.school,
+    group_code: student.value.group_code,
+    tags: student.value.tags.join("，"),
+    next_follow_up_at: student.value.next_follow_up_at?.slice(0, 10) ?? "",
+    note: student.value.note,
+  };
+  editOpen.value = true;
+}
+
+function onGroupChange(e: { detail: { value: number } }): void {
+  editForm.value.group_code = groupOptions[e.detail.value]?.value ?? "visitor";
+}
+
+function onDateChange(e: { detail: { value: string } }): void {
+  editForm.value.next_follow_up_at = e.detail.value;
+}
+
+async function saveProfile(): Promise<void> {
+  if (!student.value) return;
+  if (!editForm.value.grade.trim()) {
+    uni.showToast({ title: "请填写年级", icon: "none" });
+    return;
+  }
+  const tags = editForm.value.tags
+    .split(/[,，、]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const followUp = editForm.value.next_follow_up_at
+    ? `${editForm.value.next_follow_up_at}T00:00:00+08:00`
+    : "";
+  saving.value = true;
+  try {
+    const res = await request<{ student: Student }>(`/api/v1/students/${student.value.id}`, "PATCH", {
+      grade: editForm.value.grade.trim(),
+      school: editForm.value.school.trim(),
+      group_code: editForm.value.group_code,
+      tags,
+      next_follow_up_at: followUp,
+      note: editForm.value.note.trim(),
+    });
+    student.value = res.student;
+    editOpen.value = false;
+    uni.showToast({ title: "已保存", icon: "success" });
+  } catch (err) {
+    uni.showToast({ title: err instanceof ApiError ? err.message : "保存失败", icon: "none" });
   } finally {
     saving.value = false;
   }
@@ -187,6 +256,21 @@ function goBack(): void {
 
       <view class="section">
         <view class="section-head">
+          <text class="section-title">档案</text>
+          <text class="link" @click="openEdit">编辑</text>
+        </view>
+        <view class="archive-row">
+          <text class="archive-label">标签</text>
+          <text class="archive-value">{{ student.tags.length ? student.tags.join("、") : "未设置" }}</text>
+        </view>
+        <view class="archive-row">
+          <text class="archive-label">下次回访</text>
+          <text class="archive-value">{{ student.next_follow_up_at?.slice(0, 10) || "未设置" }}</text>
+        </view>
+      </view>
+
+      <view class="section">
+        <view class="section-head">
           <text class="section-title">跟进记录</text>
           <text v-if="session.isOwner" class="link" @click="openFollow">+ 新增</text>
         </view>
@@ -230,6 +314,32 @@ function goBack(): void {
         <input v-model="follow.next_action" class="field" placeholder="下一步（可选）" />
         <button class="primary" :loading="saving" @click="submitFollow">保存</button>
         <button class="ghost" @click="followOpen = false">取消</button>
+      </view>
+    </view>
+
+    <view v-if="editOpen" class="mask" @click.self="editOpen = false">
+      <view class="sheet">
+        <text class="sheet-title">编辑档案</text>
+        <input v-model="editForm.grade" class="field" placeholder="年级（必填）" />
+        <input v-model="editForm.school" class="field" placeholder="学校" />
+        <picker :range="groupOptions" range-key="label" @change="onGroupChange">
+          <view class="field-row">
+            <text class="field-label">分组</text>
+            <text class="picker">
+              {{ groupOptions.find((g) => g.value === editForm.group_code)?.label }}
+            </text>
+          </view>
+        </picker>
+        <input v-model="editForm.tags" class="field" placeholder="标签，用逗号分隔（最多 8 个）" />
+        <picker mode="date" :value="editForm.next_follow_up_at" @change="onDateChange">
+          <view class="field-row">
+            <text class="field-label">下次回访</text>
+            <text class="picker">{{ editForm.next_follow_up_at || "未设置" }}</text>
+          </view>
+        </picker>
+        <textarea v-model="editForm.note" class="textarea" placeholder="备注" />
+        <button class="primary" :loading="saving" @click="saveProfile">保存</button>
+        <button class="ghost" @click="editOpen = false">取消</button>
       </view>
     </view>
   </view>
@@ -328,6 +438,26 @@ function goBack(): void {
   background: $hm-primary;
   border-color: $hm-primary;
   color: #fff;
+}
+
+.archive-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-top: 14rpx;
+  font-size: 26rpx;
+}
+
+.archive-label {
+  flex: none;
+  color: $hm-muted;
+}
+
+.archive-value {
+  flex: 1;
+  text-align: right;
+  line-height: 1.5;
 }
 
 .hint {

@@ -435,6 +435,87 @@ func (r *crmRepo) PortalHome(ctx context.Context, guardianID string) (*biz.Porta
 	return out, nil
 }
 
+func (r *crmRepo) PortalStudent(ctx context.Context, guardianID, studentID string) (*biz.PortalStudent, error) {
+	var allowed int
+	if err := r.db.WithContext(ctx).Raw(
+		`SELECT COUNT(*) FROM student_guardians sg
+		 JOIN guardians g ON g.id = sg.guardian_id
+		 WHERE sg.guardian_id = ? AND sg.student_id = ? AND g.status='active'`,
+		guardianID, studentID,
+	).Scan(&allowed).Error; err != nil {
+		return nil, err
+	}
+	if allowed == 0 {
+		return nil, biz.ErrStudentNotFound
+	}
+	var row studentRow
+	if err := r.db.WithContext(ctx).Raw(`SELECT `+studentColumns+` FROM students WHERE id = ? AND archived_at IS NULL`, studentID).Scan(&row).Error; err != nil {
+		return nil, err
+	}
+	if row.ID == "" {
+		return nil, biz.ErrStudentNotFound
+	}
+	out := &biz.PortalStudent{Student: row.toBiz(), Tasks: []biz.PortalTask{}, Lessons: []biz.PortalLesson{}}
+	var tasks []struct {
+		ID     string
+		Title  string
+		Status string
+		DueAt  sql.NullTime
+	}
+	if err := r.db.WithContext(ctx).Raw(
+		`SELECT ta.id, t.title, ta.status, t.due_at
+		 FROM task_assignments ta JOIN tasks t ON t.id = ta.task_id
+		 WHERE ta.student_id = ? ORDER BY ta.status='pending' DESC, t.due_at IS NULL, t.due_at ASC LIMIT 50`,
+		studentID,
+	).Scan(&tasks).Error; err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		item := biz.PortalTask{ID: t.ID, Title: t.Title, Status: t.Status}
+		if t.DueAt.Valid {
+			v := t.DueAt.Time
+			item.DueAt = &v
+		}
+		out.Tasks = append(out.Tasks, item)
+	}
+	var account struct {
+		Balance   sql.NullFloat64
+		ExpiresAt sql.NullTime
+	}
+	if err := r.db.WithContext(ctx).Raw(
+		`SELECT balance_hours AS balance, expires_at FROM lesson_accounts WHERE student_id = ?`, studentID,
+	).Scan(&account).Error; err == nil {
+		if account.Balance.Valid {
+			out.BalanceHours = account.Balance.Float64
+		}
+		if account.ExpiresAt.Valid {
+			v := account.ExpiresAt.Time
+			out.ExpiresAt = &v
+		}
+	}
+	var lessons []struct {
+		ID           string
+		Kind         string
+		DeltaHours   float64
+		BalanceAfter float64
+		Note         string
+		CreatedAt    time.Time
+	}
+	if err := r.db.WithContext(ctx).Raw(
+		`SELECT id, kind, delta_hours, balance_after, note, created_at
+		 FROM lesson_ledger WHERE student_id = ? ORDER BY created_at DESC LIMIT 20`, studentID,
+	).Scan(&lessons).Error; err != nil {
+		return nil, err
+	}
+	for _, l := range lessons {
+		out.Lessons = append(out.Lessons, biz.PortalLesson{
+			ID: l.ID, Kind: l.Kind, DeltaHours: l.DeltaHours,
+			BalanceAfter: l.BalanceAfter, Note: l.Note, CreatedAt: l.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 func prefixColumns(prefix string) string {
 	cols := strings.Split(studentColumns, ",")
 	for i := range cols {
