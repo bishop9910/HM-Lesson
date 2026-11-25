@@ -288,7 +288,8 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 
 **仍需做的验收**
 
-- [ ] 运营方给出 3 个模板 ID 并填进云托管环境变量；
+- [x] `HM_WX_APP_ID` / `HM_WX_APP_SECRET` 已在云托管配置（2026-11-25）；启动日志 `微信 access_token 获取成功，订阅消息可发送` 即证明可用，失败会打 `Warn` 并带 `wx.APIError` 的 code；
+- [ ] 运营方给出剩余 2 个模板 ID（「已批改」「打回」）并补进 `HM_WX_SUBSCRIBE_TEMPLATES`；「发布作业」已配 `qV_nVYIcFpaTP71yWyu-6Ln1haEHfb5UEk93UkPKebQ`；
 - [ ] 家长真机点“开启提醒”→ 教师发布 → 微信服务通知到达；
 - [ ] 点通知进入正确作业（`pages/portal/tasks/detail?id=<assignment_id>`）；
 - [ ] 拒绝/未配置时业务成功、不重复弹。

@@ -26,11 +26,12 @@
 **开始前必须让用户提供/确认**
 
 - [ ] 小程序后台「订阅消息」里可用的模板 ID：建议至少 3 个
-  - 作业发布通知
-  - 作业批阅完成通知
-  - 作业被打回通知（可与“批阅完成”合并）
-- [ ] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET`
+  - [x] 作业发布通知：`qV_nVYIcFpaTP71yWyu-6Ln1haEHfb5UEk93UkPKebQ`（已配进 `HM_WX_SUBSCRIBE_TEMPLATES`）
+  - [ ] 作业批阅完成通知：用户自建模板（作业名称 + 批改分数），**等审核**
+  - [ ] 作业被打回通知：建议新建（作业名称 + 学员姓名 + 打回原因），**等审核**
+- [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET`（2026-11-25 用户已在云端配好）
   - AppSecret 只放云托管环境变量，**禁止入库/写文档**
+  - 启动时 `probeWXToken` 会异步换一次 access_token：日志出现「微信 access_token 获取成功」即证明 AppID/AppSecret 可用；出现「获取失败」按 `wx.APIError` 的 code 排查（40013 invalid appid / 40125 invalid appsecret / 40164 IP 白名单）
 - [ ] 确认工具类目下这些模板可选（个人主体 + 未认证，模板库可能受限）
 - [x] 确认家长端是否已有 `openid`（`guardians.openid` 列已存在；登录时从 `X-WX-OPENID` 采集，需 `X-WX-SOURCE` 非空）
 

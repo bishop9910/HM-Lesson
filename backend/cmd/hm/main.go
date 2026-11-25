@@ -218,11 +218,25 @@ func buildSubscriptions(cfg conf.Config, db *gorm.DB, logger *slog.Logger) *biz.
 	}
 	var sender biz.SubscribeSender
 	if cfg.WXAppID != "" && cfg.WXAppSecret != "" && len(templates) > 0 {
-		sender = wxSubscribeSender{client: wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)}
+		client := wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)
+		sender = wxSubscribeSender{client: client}
+		go probeWXToken(client, cfg.WXAppID, logger)
 	} else {
 		logger.Info("微信订阅消息未启用：需要 HM_WX_APP_ID、HM_WX_APP_SECRET 与 HM_WX_SUBSCRIBE_TEMPLATES；家长仍可在小程序内看到站内通知")
 	}
 	return biz.NewSubscriptionUsecase(data.NewSubscriptionRepo(db), sender, templates, cfg.WXMiniprogramState, logger)
+}
+
+// probeWXToken 启动时验证 AppID/AppSecret 能否换到 access_token，让配置错误在日志里暴露，
+// 而不是等到第一次真实发通知才 500/40013。失败只记日志：订阅消息是增强能力，不阻塞启动。
+func probeWXToken(client *wx.Client, appID string, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.AccessToken(ctx); err != nil {
+		logger.Warn("微信 access_token 获取失败，订阅消息将无法发送", "app_id", appID, "error", err)
+		return
+	}
+	logger.Info("微信 access_token 获取成功，订阅消息可发送", "app_id", appID)
 }
 
 // wxSubscribeSender 把 pkg/wx 适配成 biz.SubscribeSender；retryable=false 表示重试无意义。
