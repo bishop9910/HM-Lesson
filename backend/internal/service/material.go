@@ -416,6 +416,8 @@ func (s *Server) mapMaterialError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusNotFound, "MATERIAL_CATEGORY_NOT_FOUND", "资料分类不存在")
 	case errors.Is(err, biz.ErrMaterialState):
 		return fail(ctx, http.StatusConflict, "MATERIAL_STATE", "资料当前状态不允许该操作")
+	case errors.Is(err, biz.ErrMaterialNoFiles):
+		return fail(ctx, http.StatusBadRequest, "MATERIAL_NO_FILES", "发布前至少添加 1 个附件")
 	case errors.Is(err, biz.ErrInvalidMaterial):
 		return fail(ctx, http.StatusBadRequest, "VALIDATION_FAILED", "资料参数不合法")
 	case errors.Is(err, biz.ErrForbidden):

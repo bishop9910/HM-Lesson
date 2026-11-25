@@ -16,6 +16,7 @@ type stubMaterialRepo struct {
 	deleted  string
 	visSet   map[string]bool
 	visGrace string
+	files    []MaterialFile
 }
 
 func (r *stubMaterialRepo) CreateMaterial(_ context.Context, m *Material) (*Material, error) {
@@ -29,7 +30,7 @@ func (r *stubMaterialRepo) UpdateMaterial(_ context.Context, m *Material) (*Mate
 }
 
 func (r *stubMaterialRepo) GetMaterial(_ context.Context, id string) (*Material, error) {
-	return &Material{ID: id, Status: MaterialDraft}, nil
+	return &Material{ID: id, Status: MaterialDraft, Files: r.files}, nil
 }
 
 func (r *stubMaterialRepo) SetMaterialStatus(_ context.Context, id, status string) (*Material, error) {
@@ -153,6 +154,26 @@ func TestArchiveRequiresPublished(t *testing.T) {
 	// stub 的 GetMaterial 固定返回 draft。
 	if _, err := uc.Archive(context.Background(), actor, "m1"); !errors.Is(err, ErrMaterialState) {
 		t.Fatalf("archive draft should conflict, got %v", err)
+	}
+}
+
+func TestPublishRequiresFiles(t *testing.T) {
+	repo := &stubMaterialRepo{}
+	uc := NewMaterialUsecase(repo)
+	actor := &Staff{ID: "staff-1", Role: RoleOwner}
+
+	// 没有附件的资料发出去，家长端只会看到标题却下载不到东西，必须拦住。
+	if _, err := uc.Publish(context.Background(), actor, "m1"); !errors.Is(err, ErrMaterialNoFiles) {
+		t.Fatalf("publish without files should be rejected, got %v", err)
+	}
+
+	repo.files = []MaterialFile{{Name: "讲义", FileID: "cloud://a.pdf"}}
+	got, err := uc.Publish(context.Background(), actor, "m1")
+	if err != nil {
+		t.Fatalf("publish with files: %v", err)
+	}
+	if repo.status != MaterialPublished || got.Status != MaterialPublished {
+		t.Fatalf("want published, got repo=%q material=%q", repo.status, got.Status)
 	}
 }
 

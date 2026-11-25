@@ -1,8 +1,8 @@
 # HANDOVER · 给下一个接手 HM-Lesson 的 Agent
 
 > 先读 [`AGENTS.md`](AGENTS.md)、[`TODO.md`](TODO.md)，再读本文件。
-> 当前版本 **v1.3.6**（第一版第 36 次发布）；代码基线 `main` @ `e5ba70e`，本轮 M6/M7/M8/M9 + 版本号 + 文档整理尚未提交。
-> 最后更新：2026-11-25 21:45
+> 当前版本 **v1.3.6**（第一版第 36 次发布）；代码基线 `main` @ `e5ba70e`，M6/M7/M8/M9 已推送并在测试环境跑通，本轮后续修补（资料发布校验、按钮/输入框样式）尚未提交。
+> 最后更新：2026-11-25 22:50
 
 ---
 
@@ -14,31 +14,34 @@
 | --- | --- | --- | --- |
 | M4 | 一对一预约 + 课时台账（时段/审批/消课幂等/未到课不扣） | `000007` `000008` | 线上探针全通过 |
 | M5-a | 学员删除（两次确认，有无流水区别对待）+ 内部系统账号 `system` | `000010` | 线上探针通过 |
-| M5-b | 资料库：六分类 + 分类×分组可见矩阵 + 多附件 + 下载日志 | `000011` | 线上探针通过，真机下载待验 |
-| M6 | 通知：发布→回执→催办→48h 再推→回执 xlsx | `000012` | 待部署 + 真机 |
-| M7 | 班课：班级/成员/课次与出勤（不扣课时） | `000012` | 待部署 + 真机 |
-| M8 | 家长门户五卡（待交作业/待确认回执/剩余课时/待上预约/可看资料） | — | 待真机 |
-| M9 | 看板四组（客户结构/交付质量/一对一运营/待办，60 秒缓存） | — | 待真机核对 |
+| M5-b | 资料库：六分类 + 分类×分组可见矩阵 + 多附件 + 下载日志 | `000011` | 线上探针通过（含分组不可见负向用例），真机下载待验 |
+| M6 | 通知：发布→回执→催办→48h 再推→回执 xlsx | `000012` | ✅ 线上全链路（家长 `13000000000`）：建→发送→家长确认→教师看到 confirmed→xlsx 6518B |
+| M7 | 班课：班级/成员/课次与出勤（不扣课时） | `000012` | ✅ 线上写链路：建班→加成员→记课→详情→删课次→归档 |
+| M8 | 家长门户五卡（待交作业/待确认回执/剩余课时/待上预约/可看资料） | — | 线上 `pending_receipts` 正确；真机核对待做 |
+| M9 | 看板四组（客户结构/交付质量/一对一运营/待办，60 秒缓存） | — | ✅ 线上 `groups=4` |
 | 其他 | 家长账号体系（密码登录/审批设密/账号清理）、批量删除、owner 保护、system 审计与控制台 | `000009` `000010` | 已上线验证 |
 
 迁移总数 **12**。本地验证全绿：`gofmt -l .` 无输出、`go build/vet/test` 0、`vue-tsc --noEmit` 0、`uni build -p mp-weixin` DONE。
+线上探针：`scripts/dev/probe-m6.mjs` **24/24**；`scripts/dev/probe-notice.mjs` **22/23**（唯一未过项 `publish without files rejected` 是待发布的新校验）。
 
 ### 0.2 下一轮的第一件事（按顺序）
 
-1. **提交并发布 v1.3.6**：推送 → 云托管重新构建（只改环境变量不会重建镜像）→ 核对 `/healthz` 返回 `"version":"1.3.6"` → 日志 `数据库迁移完成 versions: 12 items`。
-2. **真机验收**（详见 `TODO.md` P0-4）：相机上传、资料下载、通知回执、班课记课、门户五卡与看板数字。
-3. **订阅消息收尾**：等「作业已批改」「作业被打回」两个模板审核通过后，把 ID + 关键词字段名填进 `HM_WX_SUBSCRIBE_TEMPLATES`（`docs/deploy-wechat-cloudrun.md` §7.1）。云调用通道已打通（`HM_WX_CALL_MODE=cloud`）。
-4. **上线安全收尾**：关闭云托管公网访问、删 `HM_BOOTSTRAP_PASSWORD`、换掉 root 数据库账号、上传文件补服务端校验。
-5. **测试数据清理**：已关闭的旧任务 `test`、旧家长 `13000000000`、`hm-lesson-023` 时期的时区脏数据，清理前先问用户。
+1. **重新发布一次**：带「资料发布前必须有附件」校验（`400 MATERIAL_NO_FILES`，`biz/material.go` 的 `ErrMaterialNoFiles`），发布后 `probe-notice.mjs` 应 23/23。
+2. **小程序重新导入** `frontend/apps/mp/dist/build/mp-weixin`：包含输入框 88rpx 修复与资料库按钮改 view 磁贴。
+3. **真机验收**（详见 `TODO.md` P0-4）：相机上传、资料下载、通知回执、班课记课、门户五卡与看板数字。
+4. **订阅消息收尾**：等「作业已批改」「作业被打回」两个模板审核通过后，把 ID + 关键词字段名填进 `HM_WX_SUBSCRIBE_TEMPLATES`（`docs/deploy-wechat-cloudrun.md` §7.1）。云调用通道已打通（`HM_WX_CALL_MODE=cloud`）。
+5. **上线安全收尾**：关闭云托管公网访问、删 `HM_BOOTSTRAP_PASSWORD`、换掉 root 数据库账号、上传文件补服务端校验。
+6. **测试数据清理**：旧任务 `test`、4 条「回执冒烟」通知、2 个已归档空班级、时区脏数据，清理前先问用户（或走 system 控制台）。
 
 ### 0.3 这一轮踩过、下一轮别再踩的坑
 
 - **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移**：`000007` 因为 `000002` 早建过同名表而被整段跳过，导致线上 5 个接口 1054 报错；修复方式是 `000008` 先 `DROP` 再建。新建表前一定先 `grep` 一遍 `backend/migrations`。
 - **`000012` 只做增量 ALTER**：班课/通知五张表 `000002` 已建，M6/M7 不再建表。
-- **MySQL 5.7 的 JSON 列不吃 binary**：写 `file_ids`/`payload` 必须 `string(payloadJSON)`，否则 3144。
+- **MySQL 5.7 的 JSON 列不吃 binary，也不吃空串**：写 `file_ids`/`attendance`/`payload` 必须 `string(payloadJSON)`（否则 3144）；空列表要写 `"[]"`、空对象要写 `"{}"`（空串报 **3140**，症状是「列表 200、新建 500、日志里没有 1054」）。
 - **时区**：DSN 已自动带 `time_zone='+00:00'`（`data.withUTCSession`），自拼 `HM_DB_DSN` 时要手动带，否则 SQL `NOW(3)` 会写本地墙上时间。
 - **含中文的源码只能用 `write`/`edit` 工具改**，用 PowerShell `Set-Content` 会按 ANSI 读坏文件（会报 `string literal not terminated`）。
 - **小程序 `scroll-view` 横向滚动**要给直接子节点绑确定宽度（控制台结果表就是这样修的）。
+- **原生 `<input>` 只给 padding 会裁字**：必须 `height: 88rpx; line-height: 88rpx; padding: 0 22rpx; box-sizing: border-box`；**flex 里放原生 `<button>` 会被压变形**，工具条统一用 `<view class="btn">` 磁贴（`flex:1; height:80rpx; line-height:80rpx; text-align:center; white-space:nowrap`）。
 
 ---
 

@@ -42,6 +42,8 @@ var (
 	ErrMaterialCategoryNotFound = errors.New("资料分类不存在")
 	// ErrInvalidMaterial 参数不合法。
 	ErrInvalidMaterial = errors.New("资料参数不合法")
+	// ErrMaterialNoFiles 发布前没有附件。
+	ErrMaterialNoFiles = errors.New("发布前至少添加 1 个附件")
 	// ErrMaterialState 状态不允许该操作。
 	ErrMaterialState = errors.New("资料当前状态不允许该操作")
 )
@@ -340,6 +342,14 @@ func (uc *MaterialUsecase) UpdateMaterial(ctx context.Context, actor *Staff, id 
 
 // Publish 发布：draft/archived → published，记录发布时间。
 func (uc *MaterialUsecase) Publish(ctx context.Context, actor *Staff, id string) (*Material, error) {
+	// 没有附件的资料发出去，家长端只能看到标题却下载不到东西，直接拒绝。
+	current, err := uc.repo.GetMaterial(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(current.Files) == 0 {
+		return nil, ErrMaterialNoFiles
+	}
 	return uc.repo.SetMaterialStatus(ctx, id, MaterialPublished)
 }
 

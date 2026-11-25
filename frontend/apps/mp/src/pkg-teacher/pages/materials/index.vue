@@ -18,8 +18,8 @@
     </scroll-view>
 
     <view class="toolbar">
-      <button class="ghost" :loading="loading" @tap="load">刷新</button>
-      <button class="primary" @tap="openCreate">新建资料</button>
+      <view class="btn" hover-class="press" @tap="load">{{ loading ? '刷新中…' : '刷新' }}</view>
+      <view class="btn primary" hover-class="press" @tap="openCreate">新建资料</view>
     </view>
 
     <view v-if="loading && !materials.length" class="state">加载中…</view>
@@ -63,10 +63,10 @@
             <text class="file-name">{{ file.name }}</text>
             <text class="file-del" @tap="removeFile(index)">移除</text>
           </view>
-          <button v-if="form.files.length < 9" class="ghost" @tap="chooseFiles">添加文件（最多 9 个）</button>
+          <view v-if="form.files.length < 9" class="btn" hover-class="press" @tap="chooseFiles">添加文件（最多 9 个）</view>
         </view>
-        <button class="primary" :loading="saving" :disabled="saving" @tap="submit">保存为草稿</button>
-        <button class="ghost" @tap="closeSheet">取消</button>
+        <view class="btn primary" hover-class="press" @tap="submit">{{ saving ? '保存中…' : '保存为草稿' }}</view>
+        <view class="btn" hover-class="press" @tap="closeSheet">取消</view>
       </view>
     </view>
   </view>
@@ -354,8 +354,37 @@ onShow(() => {
 
 .toolbar {
   display: flex;
-  justify-content: flex-end;
   margin-bottom: 16rpx;
+}
+
+/* 工具栏用 view 磁贴，不用原生 button：原生 button 在 flex 里会被压成一条，
+   文字竖排/裁字（v1.3.6 前的老问题）。两个一组、等宽铺满。 */
+.btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  margin-right: 16rpx;
+  border-radius: 16rpx;
+  background: $hm-surface;
+  border: 1rpx solid $hm-border;
+  color: $hm-ink;
+  font-size: 28rpx;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.btn:last-child {
+  margin-right: 0;
+}
+
+.btn.primary {
+  background: $hm-primary;
+  border-color: $hm-primary;
+  color: #fff;
+}
+
+.press {
+  opacity: 0.72;
 }
 
 .card {
@@ -503,27 +532,11 @@ onShow(() => {
   color: $hm-danger;
 }
 
-.primary {
-  margin-top: 8rpx;
-  height: 88rpx;
-  line-height: 88rpx;
-  padding: 0;
-  background: $hm-primary;
-  color: #fff;
-  border-radius: 16rpx;
-  font-size: 28rpx;
-}
-
-.ghost {
-  margin-top: 8rpx;
-  height: 88rpx;
-  line-height: 88rpx;
-  padding: 0;
-  background: transparent;
-  color: $hm-primary;
-  border: 1rpx solid $hm-primary;
-  border-radius: 16rpx;
-  font-size: 26rpx;
+.sheet .btn {
+  margin-right: 0;
+  margin-top: 16rpx;
+  flex: none;
+  width: 100%;
 }
 
 .mini {
