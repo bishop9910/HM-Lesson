@@ -451,7 +451,9 @@ func decodeAudienceValue(audienceType string, raw []byte) string {
 
 func encodeStringList(items []string) (string, error) {
 	if len(items) == 0 {
-		return "", nil
+		// MySQL 5.7 的 JSON 列不接受空字符串（报 3140 Invalid JSON text），
+		// 空列表必须写 "[]"，不能写 ""。
+		return "[]", nil
 	}
 	encoded, err := json.Marshal(items)
 	if err != nil {

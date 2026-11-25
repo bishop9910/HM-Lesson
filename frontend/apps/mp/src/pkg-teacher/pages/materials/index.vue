@@ -454,7 +454,9 @@ onShow(() => {
 
 .field {
   width: 100%;
-  padding: 20rpx 22rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 22rpx;
   margin-bottom: 14rpx;
   box-sizing: border-box;
   border-radius: 14rpx;
@@ -503,6 +505,9 @@ onShow(() => {
 
 .primary {
   margin-top: 8rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0;
   background: $hm-primary;
   color: #fff;
   border-radius: 16rpx;
@@ -511,6 +516,9 @@ onShow(() => {
 
 .ghost {
   margin-top: 8rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0;
   background: transparent;
   color: $hm-primary;
   border: 1rpx solid $hm-primary;
@@ -520,13 +528,15 @@ onShow(() => {
 
 .mini {
   flex: 1;
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0;
   margin-right: 12rpx;
   font-size: 24rpx;
   background: transparent;
   color: $hm-primary;
   border: 1rpx solid $hm-primary;
   border-radius: 12rpx;
-  padding: 6rpx 0;
 }
 
 .mini.danger {

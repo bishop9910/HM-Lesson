@@ -310,7 +310,8 @@ func dateOrNull(t *time.Time) any {
 // encodeAttendance 把出勤记录压成 {"student_id":"present"} 的 JSON。
 func encodeAttendance(rows []biz.AttendanceRow) (string, error) {
 	if len(rows) == 0 {
-		return "", nil
+		// MySQL 5.7 的 JSON 列不接受空字符串（3140），没有出勤时写空对象。
+		return "{}", nil
 	}
 	payload := make(map[string]string, len(rows))
 	for _, row := range rows {

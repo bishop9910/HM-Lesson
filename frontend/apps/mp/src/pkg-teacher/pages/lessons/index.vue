@@ -204,7 +204,7 @@ onShow(load);
 .sheet-head { display: flex; justify-content: space-between; align-items: center; }
 .sheet-title { font-size: 28rpx; font-weight: 600; }
 .link { color: $hm-primary; font-size: 25rpx; }
-.input { margin-top: 18rpx; background: $hm-paper-deep; border-radius: 12rpx; padding: 18rpx 20rpx; font-size: 26rpx; }
+.input { margin-top: 18rpx; height: 88rpx; line-height: 88rpx; background: $hm-paper-deep; border-radius: 12rpx; padding: 0 20rpx; font-size: 26rpx; box-sizing: border-box; }
 .sheet-actions { display: flex; margin-top: 22rpx; }
 .btn { background: $hm-primary; color: #fff; font-size: 26rpx; border-radius: 12rpx; margin-right: 16rpx; padding: 0 32rpx; }
 .btn.ghost { background: transparent; color: $hm-primary; border: 1rpx solid $hm-primary; }

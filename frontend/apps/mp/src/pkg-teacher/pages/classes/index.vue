@@ -581,7 +581,7 @@ onShow(() => {
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 14rpx;
-  padding: 20rpx 22rpx;
+  padding: 0 22rpx;
   border-radius: 14rpx;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
@@ -589,8 +589,17 @@ onShow(() => {
   font-size: 28rpx;
 }
 
+/* 小程序原生 input 有固定行高：显式 height + line-height，只给 padding 会裁掉文字；
+   同名 class 也用于 picker 的 <view>，line-height 正好把内容垂直居中。 */
+.input {
+  height: 88rpx;
+  line-height: 88rpx;
+}
+
 .textarea {
   height: 160rpx;
+  padding: 18rpx 22rpx;
+  line-height: 1.5;
 }
 
 .row-actions {

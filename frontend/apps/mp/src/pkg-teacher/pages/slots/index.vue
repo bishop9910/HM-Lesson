@@ -214,7 +214,7 @@ onShow(load);
 .label { color: $hm-muted; font-size: 25rpx; width: 96rpx; }
 .label.tight { width: auto; margin: 0 12rpx; }
 .value { font-size: 27rpx; padding: 12rpx 20rpx; background: $hm-paper-deep; border-radius: 12rpx; }
-.input { margin-top: 18rpx; background: $hm-paper-deep; border-radius: 12rpx; padding: 18rpx 20rpx; font-size: 26rpx; }
+.input { margin-top: 18rpx; height: 88rpx; line-height: 88rpx; background: $hm-paper-deep; border-radius: 12rpx; padding: 0 20rpx; font-size: 26rpx; box-sizing: border-box; }
 .input.inline { width: 120rpx; margin-top: 0; text-align: center; }
 .btn { margin-top: 22rpx; background: $hm-primary; color: #fff; font-size: 27rpx; border-radius: 12rpx; }
 .btn.ghost { background: transparent; color: $hm-primary; border: 1rpx solid $hm-primary; }

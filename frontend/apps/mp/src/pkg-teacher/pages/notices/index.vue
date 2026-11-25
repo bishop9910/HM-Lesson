@@ -463,7 +463,7 @@ onShow(() => {
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 14rpx;
-  padding: 20rpx 22rpx;
+  padding: 0 22rpx;
   border-radius: 14rpx;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
@@ -471,8 +471,17 @@ onShow(() => {
   font-size: 28rpx;
 }
 
+/* 小程序原生 input 有固定行高，必须显式给 height + line-height，
+   否则只加 padding 会把文字挤出可视区（上下被裁掉）。 */
+.input {
+  height: 88rpx;
+  line-height: 88rpx;
+}
+
 .textarea {
   height: 220rpx;
+  padding: 20rpx 22rpx;
+  line-height: 1.5;
 }
 
 .chips {
