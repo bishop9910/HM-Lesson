@@ -650,11 +650,21 @@ func (s *Server) PortalHome(ctx khttp.Context) error {
 	for _, st := range home.Students {
 		students = append(students, toPortalStudentDTO(st))
 	}
+	nextBooking := ""
+	if home.NextBookingAt != nil {
+		nextBooking = home.NextBookingAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
 	return ctx.JSON(http.StatusOK, map[string]any{
 		"guardian":      map[string]any{"name": home.GuardianName, "phone": home.GuardianPhone},
 		"students":      students,
 		"pending_tasks": home.PendingTasks,
 		"balance_hours": home.BalanceHours,
+		// M8 门户五卡片。
+		"pending_receipts":     home.PendingReceipts,
+		"upcoming_bookings":    home.UpcomingBookings,
+		"next_booking_at":      nextBooking,
+		"materials_count":      home.MaterialsCount,
+		"latest_material_name": home.LatestMaterialName,
 	})
 }
 

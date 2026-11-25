@@ -1,5 +1,5 @@
 APP=hm
-VERSION?=0.1.0-dev
+VERSION?=1.3.6
 
 .PHONY: build run dev test fmt fmt-check api migrate migrate-up migrate-down
 

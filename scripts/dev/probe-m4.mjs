@@ -1,5 +1,15 @@
 const BASE = "https://hm-lesson-353410-10-1540142477.sh.run.tcloudbase.com";
-const OWNER = { phone: "18852390970", password: "HmTD8M5xg93ib8zKf5" };
+
+function requirePassword() {
+  const pw = process.env.HM_PROBE_PASSWORD;
+  if (!pw) {
+    console.error("缺少 HM_PROBE_PASSWORD：请用环境变量传测试账号密码，不要把密码写进仓库。");
+    process.exit(2);
+  }
+  return pw;
+}
+
+const OWNER = { phone: process.env.HM_PROBE_PHONE ?? "18852390970", password: requirePassword() };
 
 const log = (...parts) => console.log(...parts);
 

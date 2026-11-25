@@ -52,6 +52,10 @@
     {
       "path": "pages/portal/materials",
       "style": { "navigationBarTitleText": "学习资料" }
+    },
+    {
+      "path": "pages/portal/notices",
+      "style": { "navigationBarTitleText": "消息中心" }
     }
   ],
   "subPackages": [
@@ -121,6 +125,18 @@
         {
           "path": "pages/system/index",
           "style": { "navigationBarTitleText": "系统维护" }
+        },
+        {
+          "path": "pages/classes/index",
+          "style": { "navigationBarTitleText": "班课" }
+        },
+        {
+          "path": "pages/notices/index",
+          "style": { "navigationBarTitleText": "通知" }
+        },
+        {
+          "path": "pages/board/index",
+          "style": { "navigationBarTitleText": "看板" }
         }
       ]
     }

@@ -2,6 +2,16 @@
 // 用法：node scripts/dev/probe-m4e.mjs
 const BASE = "https://hm-lesson-353410-10-1540142477.sh.run.tcloudbase.com";
 
+function requirePassword() {
+  const pw = process.env.HM_PROBE_PASSWORD;
+  if (!pw) {
+    console.error("缺少 HM_PROBE_PASSWORD：请用环境变量传测试账号密码，不要把密码写进仓库。");
+    process.exit(2);
+  }
+  return pw;
+}
+
+
 function log(name, status, body) {
   console.log(`${name} ${status} ${JSON.stringify(body)}`);
 }
@@ -38,7 +48,7 @@ function isoAt(dayOffset, hour, minute = 0) {
 
 const run = async () => {
   const login = await call("POST", "/api/v1/auth/login", {
-    body: { phone: "18852390970", password: "HmTD8M5xg93ib8zKf5" },
+    body: { phone: process.env.HM_PROBE_PHONE ?? "18852390970", password: requirePassword() },
   });
   const token = login.body?.token;
   log("staff-login", login.status, { ok: Boolean(token) });

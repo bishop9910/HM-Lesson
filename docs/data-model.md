@@ -417,6 +417,8 @@ erDiagram
 
 ### 3.5 班课
 
+> **实现现状（2026-11-25，迁移 `000012_notices_delivery`）**：这三张表由 `000002_teaching` 早于本里程碑建好（生产已存在），M7 只在其上做接口与页面，**不新增表、不改列**。与下方理想模型的差异：`classes.status` 实际只有 `active`/`archived`（用归档代替 planned/ongoing/finished 四态），上课节奏存 `schedule_note varchar(255)` 而非 `rhythm`；`class_members` 用自增主键形式的 `id char(36)` + `UNIQUE uq_class_members_pair(class_id, student_id)`，并在 `joined_at`/`left_at` 之外带 `created_at`；**没有独立的 `class_attendance` 表**，逐人出勤以 JSON map 存在 `class_sessions.attendance`（键为 `student_id`，值为 `present`/`absent`/`leave`），解析时按成员表补姓名。班课**不扣课时、不产生 `lesson_ledger` 流水**。
+
 #### `classes`
 
 `id`、`name varchar(100)`、`subject varchar(32)`、`start_date date`、`end_date date`、`rhythm varchar(64)`、`status text CHECK ('planned','ongoing','finished','cancelled')`、`created_at/updated_at`。
@@ -478,6 +480,8 @@ erDiagram
 `id`、`material_id`、`file_id`、`guardian_id`、`ip inet`、`created_at`；索引 `(material_id, created_at DESC)`。
 
 ### 3.7 通知与回执
+
+> **实现现状（2026-11-25，迁移 `000012_notices_delivery`）**：`notices`/`notice_receipts` 由 `000002_teaching` 建好，`000012` 只做增量补列：`notices.audience_type varchar(16) NOT NULL DEFAULT 'all'`（取值 `all`/`group`/`students`，与 `audience` JSON 配合）、`notices.file_ids json NULL`；`notice_receipts.renotified_at datetime(3) NULL` 与 `idx_notice_receipts_pending (status, created_at)`。与下方理想模型的差异：`notices.title` 为 `varchar(128)`、`body` 为 `varchar(5000)`、`need_receipt` 是 `tinyint(1)`、`status` 只有 `draft`/`sent`（没有 `sending`，发送是一次事务内完成）；`notice_receipts` 用 `reminded_at`/`renotified_at` 两个时间戳代替 `reminder_count`/`last_reminded_at`，48 小时自动再推由**进程内 worker 每 10 分钟扫一次**（`renotified_at IS NULL` 保证只推一次），没有 `version` 列。发送语义：同一事务内快照受众 → 每家长 `INSERT IGNORE` 一条回执 → 写 `notifications(kind='notice_published')` → 置 `sent`；受众为空时报 `NOTICE_NO_AUDIENCE`。
 
 #### `notices`
 

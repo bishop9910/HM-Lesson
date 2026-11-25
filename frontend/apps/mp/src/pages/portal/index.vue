@@ -16,6 +16,11 @@ interface Home {
   students: Student[];
   pending_tasks: number;
   balance_hours: number;
+  pending_receipts: number;
+  upcoming_bookings: number;
+  next_booking_at: string;
+  materials_count: number;
+  latest_material_name: string;
 }
 interface NotificationItem {
   id: string;
@@ -221,6 +226,10 @@ function goMaterials(): void {
 function goPassword(): void {
   uni.navigateTo({ url: "/pages/portal/password" });
 }
+
+function goNotices(): void {
+  uni.navigateTo({ url: "/pages/portal/notices" });
+}
 </script>
 
 <template>
@@ -243,18 +252,31 @@ function goPassword(): void {
 
     <template v-if="home">
       <view class="stats">
-        <view class="stat">
-          <text class="stat-value">{{ home.students.length }}</text>
-          <text class="stat-label">在读学员</text>
-        </view>
-        <view class="stat">
+        <view class="stat" @click="goTasks">
           <text class="stat-value">{{ home.pending_tasks }}</text>
           <text class="stat-label">待交作业</text>
         </view>
+        <view class="stat" @click="goNotices">
+          <text class="stat-value" :class="{ warn: home.pending_receipts > 0 }">{{ home.pending_receipts }}</text>
+          <text class="stat-label">待确认回执</text>
+        </view>
         <view class="stat">
-          <text class="stat-value">{{ home.balance_hours }}</text>
+          <text class="stat-value" :class="{ warn: home.balance_hours <= 2 }">{{ home.balance_hours }}</text>
           <text class="stat-label">剩余课时</text>
         </view>
+        <view class="stat" @click="goBooking">
+          <text class="stat-value">{{ home.upcoming_bookings }}</text>
+          <text class="stat-label">待上预约</text>
+        </view>
+        <view class="stat" @click="goMaterials">
+          <text class="stat-value">{{ home.materials_count }}</text>
+          <text class="stat-label">可看资料</text>
+        </view>
+      </view>
+
+      <view v-if="home.next_booking_at" class="next-booking">
+        <text class="next-label">下次上课</text>
+        <text class="next-time">{{ home.next_booking_at.slice(5, 16).replace("T", " ") }}</text>
       </view>
 
       <view v-if="reminderAvailable" class="reminder">
@@ -287,7 +309,10 @@ function goPassword(): void {
       <view class="quick">
         <button class="ghost" @click="goTasks">我的任务</button>
         <button class="ghost" @click="goBooking">预约上课</button>
+      </view>
+      <view class="quick">
         <button class="ghost" @click="goMaterials">学习资料</button>
+        <button class="ghost" @click="goNotices">消息中心</button>
         <button class="ghost" @click="goArchive">作业档案</button>
       </view>
 
@@ -363,16 +388,43 @@ function goPassword(): void {
 
 .stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 14rpx;
   margin-top: 24rpx;
 }
 
 .stat {
-  flex: 1;
+  flex: 1 1 28%;
+  min-width: 180rpx;
   padding: 22rpx 18rpx;
   border-radius: $hm-radius;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
+}
+
+.stat-value.warn {
+  color: $hm-accent;
+}
+
+.next-booking {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14rpx;
+  padding: 16rpx 22rpx;
+  border-radius: 14rpx;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1rpx solid rgba(15, 118, 110, 0.24);
+}
+
+.next-label {
+  font-size: 24rpx;
+  color: $hm-muted;
+}
+
+.next-time {
+  font-size: 26rpx;
+  color: $hm-primary-strong;
 }
 
 .stat-value {

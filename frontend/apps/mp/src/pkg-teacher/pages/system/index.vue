@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { ApiError, request } from "@/utils/request";
 import { useSessionStore } from "@/stores/session";
@@ -47,6 +47,9 @@ const sqlText = ref("");
 const querying = ref(false);
 const queryError = ref("");
 const result = ref<QueryResult | null>(null);
+
+const COLUMN_WIDTH = 220;
+const tableWidth = computed(() => `${Math.max(1, result.value?.columns.length ?? 1) * COLUMN_WIDTH}rpx`);
 
 const roleLabels: Record<string, string> = { owner: "负责人", assistant: "助教" };
 const statusLabels: Record<string, string> = { active: "生效", disabled: "停用" };
@@ -108,6 +111,10 @@ async function runQuery(): Promise<void> {
 
 function useSample(): void {
   sqlText.value = "SELECT id, phone, role, status, hidden FROM staff WHERE deleted_at IS NULL";
+}
+
+function copyRow(line: string[]): void {
+  uni.setClipboardData({ data: line.map((cell) => (cell === null ? "NULL" : String(cell))).join("\t") });
 }
 
 onShow(() => {
@@ -194,14 +201,17 @@ onShow(() => {
         <text class="meta">
           {{ result.rows.length }} 行<text v-if="result.truncated">（已截断，最多 {{ result.max_rows }} 行）</text>
         </text>
-        <scroll-view class="table" scroll-x>
-          <view class="thead">
-            <text v-for="col in result.columns" :key="col" class="cell head">{{ col }}</text>
-          </view>
-          <view v-for="(line, i) in result.rows" :key="i" class="trow">
-            <text v-for="(value, j) in line" :key="j" class="cell">{{ value }}</text>
+        <scroll-view class="table-view" scroll-x>
+          <view class="table" :style="{ width: tableWidth }">
+            <view class="thead">
+              <view v-for="col in result.columns" :key="col" class="cell head">{{ col }}</view>
+            </view>
+            <view v-for="(line, i) in result.rows" :key="i" class="trow" @click="copyRow(line)">
+              <view v-for="(value, j) in line" :key="j" class="cell">{{ value }}</view>
+            </view>
           </view>
         </scroll-view>
+        <text class="hint-line">左右拖动查看全部列，点按任意一行复制整行</text>
       </view>
     </template>
   </view>
@@ -391,18 +401,26 @@ onShow(() => {
   margin-top: 24rpx;
 }
 
-.table {
+.table-view {
   margin-top: 12rpx;
-  padding: 12rpx 0;
+  width: 100%;
   border-radius: 12rpx;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
-  white-space: nowrap;
+}
+
+/* scroll-view 的横向滚动取决于直接子节点的真实宽度：
+   这里按「列数 × 每列宽度」算出确定宽度，避免 flex 内容宽度算不出来导致拖不动 */
+.table {
+  display: block;
+  box-sizing: border-box;
+  padding: 12rpx 0;
 }
 
 .thead,
 .trow {
   display: flex;
+  align-items: flex-start;
 }
 
 .thead {
@@ -410,15 +428,28 @@ onShow(() => {
 }
 
 .cell {
-  min-width: 160rpx;
+  flex: 0 0 220rpx;
+  width: 220rpx;
   padding: 10rpx 16rpx;
+  box-sizing: border-box;
   font-size: 22rpx;
+  line-height: 1.45;
   color: $hm-ink;
+  text-align: left;
   word-break: break-all;
+  white-space: normal;
+  overflow: hidden;
 }
 
 .cell.head {
   font-weight: 600;
   color: $hm-primary-strong;
+}
+
+.hint-line {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: $hm-muted;
 }
 </style>

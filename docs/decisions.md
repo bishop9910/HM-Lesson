@@ -514,6 +514,22 @@
 
 **回滚**：`000010` 的 down 删除 `idx_staff_hidden` 与 `hidden` 列；服务端回滚后学员删除接口消失（前端入口需同步删除），系统账号变为普通 owner（不再隐藏）。
 
+## ADR-032 M6/M7 复用 `000002` 已建的班课与通知表，只做增量迁移
+
+**背景**：`docs/data-model.md` 的 `classes`/`class_members`/`class_sessions`/`notices`/`notice_receipts` 在 `000002_teaching.up.sql` 就已被创建（生产环境已存在），但列集与理想模型有差异：`classes.status` 只有 `active`/`archived`、节奏字段叫 `schedule_note`、没有独立 `class_attendance` 表（出勤以 JSON 存在 `class_sessions.attendance`）、`notices.status` 只有 `draft`/`sent`、回执用 `reminded_at`/`renotified_at` 而非 `reminder_count`。此前 `000007` 的 `CREATE TABLE IF NOT EXISTS` 曾因同类情况被静默跳过（线上 1054 事故）。
+
+**决定**：
+- **不重建、不改列名**：M6/M7 在既有表上实现接口与页面，新增能力只通过 `000012_notices_delivery` 的 `ALTER TABLE` 补三处——`notices.audience_type varchar(16) DEFAULT 'all'`、`notices.file_ids json NULL`、`notice_receipts.renotified_at datetime(3) NULL` 与 `idx_notice_receipts_pending`。
+- 出勤继续用 `class_sessions.attendance` JSON（键 `student_id`、值 `present|absent|leave`），解析时按 `class_members` 补姓名；不引入 `class_attendance` 表。
+- 班课**不扣课时**：`class_sessions` 增删不写 `lesson_ledger`。
+- 48 小时未确认自动再推由**进程内 worker**（`kratos.AfterStart` 里 `runNoticeRenotify`，10 分钟一轮）完成，用 `renotified_at IS NULL` 保证只推一次，不引入独立 worker 容器（延续 ADR-027/029）。
+
+**理由**：生产已存在这些表，重建意味着破坏性 DDL 与数据风险；增量 `ALTER` 可回滚、可空列安全。保持与既有 `lesson_ledger`、`task_assignments` 等表的实现风格一致（出勤 JSON、无独立从表），也让 M7 能在不改表的前提下先跑起来。
+
+**影响**：`docs/data-model.md` §3.5/§3.7 与理想模型的差异已在该处「实现现状」引用块中记录；后续若要四态班级或独立出勤表，需要新迁移做数据搬迁。
+
+**回滚**：`000012` 的 down 删除 `audience_type`/`file_ids`/`renotified_at` 与索引；服务端回滚后通知发送仍可用（只剩 `draft`/`sent` 与受众 JSON），48h 再推能力消失。
+
 
 
 

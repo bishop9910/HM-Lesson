@@ -1,8 +1,44 @@
 # HANDOVER · 给下一个接手 HM-Lesson 的 Agent
 
 > 先读 [`AGENTS.md`](AGENTS.md)、[`TODO.md`](TODO.md)，再读本文件。
-> 当前基线：`main` @ `8cc6f4b`；工作区未提交改动含 `TODO.md`、`HANDOVER.md`、README 索引与微信订阅消息整套代码，尚未提交。
-> 最后更新：2026-11-25 13:40
+> 当前版本 **v1.3.6**（第一版第 36 次发布）；代码基线 `main` @ `e5ba70e`，本轮 M6/M7/M8/M9 + 版本号 + 文档整理尚未提交。
+> 最后更新：2026-11-25 21:45
+
+---
+
+## 0. 本轮交接（v1.3.6）——先看这一节
+
+### 0.1 这一轮做完了什么
+
+| 模块 | 内容 | 迁移 | 验证程度 |
+| --- | --- | --- | --- |
+| M4 | 一对一预约 + 课时台账（时段/审批/消课幂等/未到课不扣） | `000007` `000008` | 线上探针全通过 |
+| M5-a | 学员删除（两次确认，有无流水区别对待）+ 内部系统账号 `system` | `000010` | 线上探针通过 |
+| M5-b | 资料库：六分类 + 分类×分组可见矩阵 + 多附件 + 下载日志 | `000011` | 线上探针通过，真机下载待验 |
+| M6 | 通知：发布→回执→催办→48h 再推→回执 xlsx | `000012` | 待部署 + 真机 |
+| M7 | 班课：班级/成员/课次与出勤（不扣课时） | `000012` | 待部署 + 真机 |
+| M8 | 家长门户五卡（待交作业/待确认回执/剩余课时/待上预约/可看资料） | — | 待真机 |
+| M9 | 看板四组（客户结构/交付质量/一对一运营/待办，60 秒缓存） | — | 待真机核对 |
+| 其他 | 家长账号体系（密码登录/审批设密/账号清理）、批量删除、owner 保护、system 审计与控制台 | `000009` `000010` | 已上线验证 |
+
+迁移总数 **12**。本地验证全绿：`gofmt -l .` 无输出、`go build/vet/test` 0、`vue-tsc --noEmit` 0、`uni build -p mp-weixin` DONE。
+
+### 0.2 下一轮的第一件事（按顺序）
+
+1. **提交并发布 v1.3.6**：推送 → 云托管重新构建（只改环境变量不会重建镜像）→ 核对 `/healthz` 返回 `"version":"1.3.6"` → 日志 `数据库迁移完成 versions: 12 items`。
+2. **真机验收**（详见 `TODO.md` P0-4）：相机上传、资料下载、通知回执、班课记课、门户五卡与看板数字。
+3. **订阅消息收尾**：等「作业已批改」「作业被打回」两个模板审核通过后，把 ID + 关键词字段名填进 `HM_WX_SUBSCRIBE_TEMPLATES`（`docs/deploy-wechat-cloudrun.md` §7.1）。云调用通道已打通（`HM_WX_CALL_MODE=cloud`）。
+4. **上线安全收尾**：关闭云托管公网访问、删 `HM_BOOTSTRAP_PASSWORD`、换掉 root 数据库账号、上传文件补服务端校验。
+5. **测试数据清理**：已关闭的旧任务 `test`、旧家长 `13000000000`、`hm-lesson-023` 时期的时区脏数据，清理前先问用户。
+
+### 0.3 这一轮踩过、下一轮别再踩的坑
+
+- **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移**：`000007` 因为 `000002` 早建过同名表而被整段跳过，导致线上 5 个接口 1054 报错；修复方式是 `000008` 先 `DROP` 再建。新建表前一定先 `grep` 一遍 `backend/migrations`。
+- **`000012` 只做增量 ALTER**：班课/通知五张表 `000002` 已建，M6/M7 不再建表。
+- **MySQL 5.7 的 JSON 列不吃 binary**：写 `file_ids`/`payload` 必须 `string(payloadJSON)`，否则 3144。
+- **时区**：DSN 已自动带 `time_zone='+00:00'`（`data.withUTCSession`），自拼 `HM_DB_DSN` 时要手动带，否则 SQL `NOW(3)` 会写本地墙上时间。
+- **含中文的源码只能用 `write`/`edit` 工具改**，用 PowerShell `Set-Content` 会按 ANSI 读坏文件（会报 `string literal not terminated`）。
+- **小程序 `scroll-view` 横向滚动**要给直接子节点绑确定宽度（控制台结果表就是这样修的）。
 
 ---
 
@@ -10,14 +46,14 @@
 
 HM-Lesson（鹤鸣作业本）是给独立学科老师用的**工具类微信小程序**：
 
-- 家长：看孩子作业、提交作业、看批阅结果、看课时、看资料；
-- 老师：学员 CRM、任务/作业/批阅、预约/课时（待做）、资料（待做）、看板（待做）；
+- 家长：看孩子作业、提交作业、看批阅结果、看课时、看资料、看通知并确认回执、自己预约上课；
+- 老师：学员 CRM、任务/作业/批阅、预约/课时、资料库、班课、通知回执、看板、家长账号管理；
 - 一个 uni-app 小程序：家长端在主包，教师模式在 `pkg-teacher` 分包；
 - 后端：Go Kratos v3 单服务 `hm-api`（实际部署名 `hm-lesson`），HTTP/JSON；
 - 生产：微信云托管（上海），MySQL 5.7.18，COS；
 - 不做：即时通讯/聊天、支付、录播、短信。
 
-当前状态：**M1 骨架 + 多老师 + M2 CRM/Excel 导入 + M3 任务/作业/批阅/通知已上线并生产验证**；微信订阅消息已实现（配置模板 ID 后才真正发送，未配置 no-op），待真机验收。M4 之后未做。
+当前状态：**M1–M9 全部落盘（v1.3.6）**。M1/M2/M3/M4/M5 已上线并验证；M6/M7/M8/M9 待部署与真机验证；订阅消息待两个模板审核。
 
 ---
 
@@ -192,6 +228,46 @@ POST /api/v1/lesson-accounts/{studentId}/adjust    # {delta_hours,reason}（owne
 GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 ```
 
+M5/M6/M7/M9 与 system 后台（2026-11-25 新增）：
+
+```text
+GET/POST /api/v1/material-categories            # 六分类 + 分组可见性
+PATCH    /api/v1/material-categories/{id}
+PUT      /api/v1/material-categories/{id}/visibility
+GET/POST /api/v1/materials
+GET/PATCH/DELETE /api/v1/materials/{id}
+POST     /api/v1/materials/{id}/publish | /archive
+GET      /api/v1/material-downloads             # owner，下载日志
+GET      /api/v1/portal/materials
+POST     /api/v1/portal/materials/{id}/download # 先记日志再返 fileID
+
+GET/POST /api/v1/classes
+GET/PATCH /api/v1/classes/{id}                  # 详情含 members/sessions
+POST     /api/v1/classes/{id}/archive
+POST     /api/v1/classes/{id}/members
+DELETE   /api/v1/classes/{id}/members/{studentId}
+GET/POST /api/v1/classes/{id}/sessions
+DELETE   /api/v1/classes/{id}/sessions/{sessionId}
+
+GET/POST /api/v1/notices
+GET/PATCH/DELETE /api/v1/notices/{id}           # 仅草稿可改/删
+POST     /api/v1/notices/{id}/send
+GET      /api/v1/notices/{id}/receipts
+POST     /api/v1/notices/{id}/remind
+GET      /api/v1/notices/{id}/receipts.xlsx     # owner
+GET      /api/v1/portal/notices
+POST     /api/v1/portal/notices/{id}/confirm
+
+GET      /api/v1/dashboard/board                # ?from=&to=，60 秒进程内缓存
+
+GET      /api/v1/system/audit                   # 仅 system（staff.hidden）
+GET      /api/v1/system/permissions
+POST     /api/v1/system/query                   # 只读 SQL，单语句 ≤4000 字符、≤200 行、8s
+
+POST     /api/v1/students/batch-delete          # {ids,force}，单次 ≤50
+POST     /api/v1/guardians/batch-delete
+```
+
 ---
 
 ## 5. 关键约定与踩过的坑
@@ -227,7 +303,7 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
     改环境变量生成的是“配置版本”，复用旧镜像。代码改动必须让云托管从新 commit 构建；构建后确认镜像 tag 变化。
 
 11. **迁移**
-    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 11 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
+    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 12 个版本（`000001`~`000012`）。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
 
 12. **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移（2026-11-25 线上事故）**
     `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。`000011_materials` 里同样先 `DROP TABLE IF EXISTS materials`（000002 留了旧形态单文件表），否则资料库会整体被跳过。
@@ -264,6 +340,8 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 - 家长账号体系：手机号+密码登录（`000009`）、审批设初始密码、家长/老师自助改密、owner 账号总览/重置密码/物理删除、学员状态同步停用（2026-11-25，见 §5.15–5.16）；
 - 学员删除（`000010` + `DELETE /api/v1/students/{id}`）：owner 两次确认，连带清理作业/预约/绑定，家长回到未绑定；有课时流水需 `?force=1`（ADR-031）；
 - 内部系统账号（`000010` `staff.hidden`）：用户名固定 `system`，仅内部测试与调试用，不在成员列表与统计中出现；初始密码取 `HM_SYSTEM_PASSWORD`，可自助改密；
+- M5 资料库（`000011`）：六分类 + 分组可见矩阵、`file_ids` 多附件、家长下载写 `material_download_logs`（见 §7.6）；
+- M7 班课、M6 通知回执 + 导出、M9 看板、M8 门户五卡（`000012`，见 §7.7）；
 - 首页/工作台/页面纸面主题、长按批量操作、弹层修复、拍照/相册。
 
 生产已验证：M2/M3 主链路、逾期提交、删除、通知、批改图字段、家长隐私 DTO（D-13 随后提交）。
@@ -320,7 +398,7 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 
 ## 7.5 已完成：M4 一对一预约与课时（2026-11-25）
 
-**迁移**：`backend/migrations/000007_booking_lesson.up.sql` / `.down.sql`（`slots`、`bookings`、`lesson_accounts`、`lesson_ledger`）+ **`000008_fix_booking_lesson_tables.up.sql` / `.down.sql`（必须一起跑，否则线上全是 1054）**；`internal/data/migrate_test.go` 期望 8 个迁移。表结构细节见 `docs/data-model.md` §3.4；事故原因见 §5 第 12 条。
+**迁移**：`backend/migrations/000007_booking_lesson.up.sql` / `.down.sql`（`slots`、`bookings`、`lesson_accounts`、`lesson_ledger`）+ **`000008_fix_booking_lesson_tables.up.sql` / `.down.sql`（必须一起跑，否则线上全是 1054）**；`internal/data/migrate_test.go` 期望迁移数量（当前 12 个）。表结构细节见 `docs/data-model.md` §3.4；事故原因见 §5 第 12 条。
 
 **代码接入点**
 
@@ -350,7 +428,7 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 
 - [x] 真实 MySQL 5.7 上验证：2026-11-25 部署后发现 `000007` 被 `IF NOT EXISTS` 静默跳过（`000002` 已建过同名旧表），已用 `000008` 重建四张表，待重新发布后复测接口；
 - [ ] 预约通知 AF-07/08/09：`notifications.guardian_id` 目前 NOT NULL，无法给老师发通知，需迁移支持 staff 维度；
-- [ ] 班课（班级名单、上课记录、不扣课时）；
+- [ ] 班课（班级名单、上课记录、不扣课时）——已完成，见 §7.7；
 - [ ] 课前 24h 提醒（AF-10，需定时任务 + 订阅消息模板）。
 
 ---
@@ -382,6 +460,38 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 - [ ] 真机验证上传与下载打开（`wx.openDocument` 需要真机）；
 - [ ] 单份资料在分类矩阵之上的额外分组覆盖（二期）；
 - [ ] 资料与消息中心的联动（M6）。
+
+---
+
+## 7.7 已完成：M7 班课 + M6 通知回执/导出 + M9 看板 + M8 门户五卡（2026-11-25）
+
+**迁移**：`backend/migrations/000012_notices_delivery.up.sql` / `.down.sql`。这五张表（`classes`/`class_members`/`class_sessions`/`notices`/`notice_receipts`）**由 `000002_teaching` 早已建好**，`000012` 只做增量 `ALTER`：`notices.audience_type`、`notices.file_ids`、`notice_receipts.renotified_at` 与 `idx_notice_receipts_pending`。`internal/data/migrate_test.go` 期望 12 个迁移。
+
+**代码接入点**
+
+| 文件 | 职责 |
+| --- | --- |
+| `backend/internal/biz/class.go` + `data/class.go` + `service/class.go` | 班级 CRUD/归档、成员加入退出（只允许 active 学员）、课次与出勤（出勤存 `class_sessions.attendance` JSON）；9 个接口 |
+| `backend/internal/biz/notice.go` + `data/notice.go` + `service/notice.go` | 通知 CRUD/发送（事务内快照受众 + 每人一条回执 + 站内信）、催办、家长确认（幂等）、48h 再推、回执 xlsx 导出 |
+| `backend/internal/biz/dashboard.go` + `data/dashboard.go` + `service/dashboard.go` | `Board` 四组聚合 + 60 秒进程内缓存（互斥锁 + 区间命中） |
+| `backend/internal/data/crm.go` `PortalHome` | M8 五卡字段：`pending_receipts`/`upcoming_bookings`/`next_booking_at`/`materials_count`/`latest_material_name` |
+| `backend/cmd/hm/main.go` | 22 条新路由；`buildServices` 现在返回 `(*service.Server, *biz.SubscriptionUsecase, *biz.NoticeUsecase, *gorm.DB)`；`AfterStart` 起 `runNoticeRenotify`（10 分钟一轮） |
+| `frontend/apps/mp/src/pkg-teacher/pages/{classes,notices,board}/index.vue` | 班课、通知、看板 |
+| `frontend/apps/mp/src/pages/portal/{notices,index}.vue` | 家长消息中心；门户首页五卡 + 下次上课 |
+
+**语义（别改错）**
+
+- 班课**不扣课时**、不写 `lesson_ledger`；班级状态只有 `active`/`archived`（归档代替 planned/ongoing/finished），见 ADR-032。
+- 通知发送：`draft` → `sent` 在一次事务内完成；受众为空报 400 `NOTICE_NO_AUDIENCE`；`INSERT IGNORE notice_receipts` 保证一人一条。
+- 48h 再推：worker 扫 `renotified_at IS NULL AND created_at <= now-48h`，推完写 `renotified_at`，**只推一次**。
+- 看板转化率是**近似口径**（用区间新增学员的当前分组，无分组历史）；响应只给聚合值，名单走分页/导出。
+- 回执 xlsx 在请求内生成（≤2000 行）并直接流式返回，不落盘（容器无持久盘）。
+
+**未做/待跟进**
+
+- [ ] 真机验证：发布通知 → 家长确认 → 教师看到已确认数与催办；班课记一次课；看板数字与列表一致；
+- [ ] 客户名单/作业提交名单/课时流水导出（待 P2 异步 `jobs`）；
+- [ ] 课前 24h 提醒（AF-10）与预约通知（AF-07/08/09，需要 `notifications` 支持教师维度）。
 
 ---
 

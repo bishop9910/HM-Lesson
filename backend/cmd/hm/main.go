@@ -29,7 +29,7 @@ func main() {
 	logger := newLogger(cfg.LogLevel())
 	slog.SetDefault(logger)
 
-	authSrv, subs, db := buildServices(cfg, logger)
+	authSrv, subs, notices, db := buildServices(cfg, logger)
 
 	srv := khttp.NewServer(
 		khttp.Address(cfg.HTTPAddr),
@@ -166,6 +166,33 @@ func main() {
 	router.GET("/api/v1/portal/materials", authSrv.PortalMaterials)
 	router.POST("/api/v1/portal/materials/{id}/download", authSrv.PortalDownloadMaterial)
 
+	// M6 通知与回执。
+	router.GET("/api/v1/notices", authSrv.ListNotices)
+	router.POST("/api/v1/notices", authSrv.CreateNotice)
+	router.GET("/api/v1/notices/{id}", authSrv.GetNotice)
+	router.PATCH("/api/v1/notices/{id}", authSrv.UpdateNotice)
+	router.DELETE("/api/v1/notices/{id}", authSrv.DeleteNotice)
+	router.POST("/api/v1/notices/{id}/send", authSrv.SendNotice)
+	router.GET("/api/v1/notices/{id}/receipts", authSrv.ListNoticeReceipts)
+	router.POST("/api/v1/notices/{id}/remind", authSrv.RemindNotice)
+	router.GET("/api/v1/notices/{id}/receipts.xlsx", authSrv.ExportNoticeReceipts)
+	router.GET("/api/v1/portal/notices", authSrv.PortalNotices)
+	router.POST("/api/v1/portal/notices/{id}/confirm", authSrv.ConfirmNotice)
+
+	// M7 班课：班级、成员、上课记录与出勤。
+	router.GET("/api/v1/classes", authSrv.ListClasses)
+	router.POST("/api/v1/classes", authSrv.CreateClass)
+	router.GET("/api/v1/classes/{id}", authSrv.GetClass)
+	router.PATCH("/api/v1/classes/{id}", authSrv.UpdateClass)
+	router.POST("/api/v1/classes/{id}/archive", authSrv.ArchiveClass)
+	router.POST("/api/v1/classes/{id}/members", authSrv.AddClassMembers)
+	router.DELETE("/api/v1/classes/{id}/members/{studentID}", authSrv.RemoveClassMember)
+	router.POST("/api/v1/classes/{id}/sessions", authSrv.CreateClassSession)
+	router.DELETE("/api/v1/classes/{id}/sessions/{sessionID}", authSrv.DeleteClassSession)
+
+	// M9 看板（四组指标，60 秒进程内缓存）。
+	router.GET("/api/v1/dashboard/board", authSrv.DashboardBoard)
+
 	// 内部系统账号（system）专用的运维接口：操作记录、权限视图、只读控制台。
 	router.GET("/api/v1/system/audit", authSrv.SystemAudit)
 	router.GET("/api/v1/system/permissions", authSrv.SystemPermissions)
@@ -181,6 +208,9 @@ func main() {
 			if subs != nil {
 				go subs.RunWorker(ctx)
 			}
+			if notices != nil {
+				go runNoticeRenotify(ctx, notices, logger)
+			}
 			return nil
 		}),
 	)
@@ -190,10 +220,10 @@ func main() {
 	}
 }
 
-func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.SubscriptionUsecase, *gorm.DB) {
+func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.SubscriptionUsecase, *biz.NoticeUsecase, *gorm.DB) {
 	if cfg.DBDSN == "" {
 		logger.Warn("HM_DB_DSN 未配置，仅健康检查可用；登录/成员接口返回 503")
-		return service.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil
+		return service.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil, nil
 	}
 	db, err := data.Open(cfg.DBDSN)
 	if err != nil {
@@ -251,8 +281,28 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.
 	} else if created > 0 {
 		logger.Info("已初始化资料分类", "created", created)
 	}
+	classes := biz.NewClassUsecase(data.NewClassRepo(db))
+	notices := biz.NewNoticeUsecase(data.NewNoticeRepo(db))
 	return service.New(uc, dashboard, bind, crm, importUC, tasks, subs, bookings, lessons, materials,
-		biz.NewOpsUsecase(data.NewOpsRepo(db)), issuer), subs, db
+		biz.NewOpsUsecase(data.NewOpsRepo(db)), classes, notices, issuer), subs, notices, db
+}
+
+// runNoticeRenotify 每 10 分钟为超过 48 小时未确认的回执再推一次（AF-15，只推一次）。
+func runNoticeRenotify(ctx context.Context, notices *biz.NoticeUsecase, logger *slog.Logger) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		if receipts, err := notices.RenotifyDue(ctx, time.Now()); err != nil {
+			logger.Warn("通知回执再推失败", "error", err)
+		} else if len(receipts) > 0 {
+			logger.Info("通知回执已再推一次", "count", len(receipts))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // buildSubscriptions 组装一次性订阅消息用例。

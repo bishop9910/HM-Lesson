@@ -1,167 +1,120 @@
 # HM-Lesson 待办与路线图
 
-> 最后更新：2026-11-25 19:10
-> 当前代码基线：`main` @ `8cc6f4b`；本轮新增 `TODO.md`、`HANDOVER.md`、微信订阅消息（迁移 `000006` + `pkg/wx` + 投递 worker + 家长端开关）、M4 预约与课时（迁移 `000007` + biz/data/service + 4 个页面）、家长账号体系（迁移 `000009` + 密码登录/审批设密/自助改密/账号清理 + 4 个页面）与 README 索引，尚未提交
-> 生产服务：微信云托管 `hm-lesson`，环境 `prod-d8gq8vzftc39caa5b`，MySQL 5.7.18 + COS
-> 规则：完成一项就勾选；不要在生产库造测试数据；代码/部署/权限约定见 [`AGENTS.md`](AGENTS.md)。
+> **当前版本：v1.3.6**（第一版第 36 次发布）｜最后更新：2026-11-25 21:40
+> 代码基线：`main` @ `e5ba70e`（M5 资料库已提交）；本轮 M6/M7/M8/M9 + 版本号 + 文档整理**未提交**
+> 生产服务：微信云托管 `hm-lesson`（环境 `prod-d8gq8vzftc39caa5b`），MySQL 5.7.18 + COS，`HM_WX_CALL_MODE=cloud`
+> 规则：完成一项就勾选；不要在生产库造测试数据；代码/部署/权限约定见 [`AGENTS.md`](AGENTS.md)，上手先读 [`HANDOVER.md`](HANDOVER.md)。
+
+---
+
+## 0. 里程碑状态总览
+
+| 里程碑 | 内容 | 代码 | 生产验证 |
+| --- | --- | --- | --- |
+| M1 | 骨架、多老师认证、云托管部署 | 完成 | ✅ |
+| M2 | CRM、Excel 导入、家长门户 | 完成 | ✅ |
+| M3 | 任务/作业/批阅/站内通知 | 完成 | ✅（相机与上传待真机） |
+| 订阅消息 | 一次性额度 + 投递 worker + 家长开关 | 完成（`000006`） | ⚠️ 云调用链路已通，等两个模板审核 + 真机 |
+| M4 | 一对一预约 + 课时台账 | 完成（`000007`/`000008`） | ✅ 线上 19/19 探针 |
+| M5-a | 学员删除 + 内部系统账号 | 完成（`000010`） | ✅ |
+| M5-b | 学习资料库 | 完成（`000011`） | ✅ 探针覆盖，真机下载待验 |
+| M6 | 通知回执 + 催办 + 48h 再推 + 回执 xlsx | 完成（`000012`） | ⏳ 待部署 + 真机 |
+| M7 | 班课（班级/成员/课次与出勤） | 完成（`000012`） | ⏳ 待部署 + 真机 |
+| M8 | 家长门户五卡 | 完成 | ⏳ 待真机 |
+| M9 | 看板四组（60 秒缓存） | 完成 | ⏳ 待真机核对数字 |
+
+迁移总数 **12**（`000001`~`000012`），`go build/vet/test`、`vue-tsc`、`uni build -p mp-weixin` 全绿。
 
 ---
 
 ## P0：下一次对话优先做
 
-### 1. 微信订阅消息（最高优先级）
+### 1. 发布 v1.3.6（先把这一版跑起来）
 
-**为什么现在只有站内通知**
+- [ ] 提交并推送当前改动（M6/M7/M8/M9 + `version.go` 1.3.6 + `manifest.json` 1.3.6 + 文档）
+- [ ] 云托管**重新构建发布**（只改环境变量不会重建镜像）
+- [ ] 核对 `/healthz` 返回 `"version":"1.3.6"`
+- [ ] 核对启动日志：`数据库迁移完成 versions: 12 items`
+- [ ] 核对启动日志：`通知回执再推 worker` 未报错（有新逻辑：`runNoticeRenotify`）
+- [ ] 小程序重新导入 `frontend/apps/mp/dist/build/mp-weixin`（`versionName` 已是 1.3.6），上传体验版
 
-家长端目前只有站内 `notifications` 表 + 进入门户时的弹窗：
+### 2. 订阅消息闭环（等模板审核，不阻塞其他工作）
 
-- 发布任务 → 写 `task_published`
-- 批阅 → 写 `task_reviewed`
-- 打回 → 写 `task_returned`
+代码已全量落地，缺模板 ID 时整条链路 no-op（只发站内信），**不影响发布与批阅**。
 
-它不会在微信聊天列表里出现“服务通知”。要做的是**微信订阅消息**（`wx.requestSubscribeMessage` + `subscribeMessage.send`）。
+- [x] 云调用通道打通：`HM_WX_CALL_MODE=cloud`，启动日志出现「使用云调用通道」
+- [x] 作业发布模板已配：`qV_nVYIcFpaTP71yWyu-6Ln1haEHfb5UEk93UkPKebQ`
+- [ ] 「作业已批改」自建模板审核通过后，把 ID 与**关键词字段名**填进 `HM_WX_SUBSCRIBE_TEMPLATES`
+- [ ] 「作业被打回」模板（作业名称 + 学员姓名 + 打回原因）审核通过后同样填入
+- [ ] 真机验收：家长点「开启提醒」→ 教师发布作业 → 微信收到服务通知 → 点开进入正确作业
+- [ ] 真机验收：批阅/打回通知、家长拒绝授权时业务不报错不重复弹
 
-**2026-11-25 进展**：代码已落地（`000006_subscription_messages`、`pkg/wx`、`biz/data/service` 订阅用例与 worker、`GET/POST /api/v1/portal/subscriptions`、家长门户「开启提醒」按钮、云端环境变量文档与 ADR-029）。缺模板 ID 时整条链路 no-op（只发站内信），因此**不需要等配置就能保持服务正常**；剩下的是运营方填配置 + 真机验证。
+配置格式（`docs/deploy-wechat-cloudrun.md` §7.1）：
 
-**开始前必须让用户提供/确认**
+```json
+{"task_published":{"id":"...","fields":{"thing1":"title","time2":"due_at"}},"task_reviewed":{"id":"...","fields":{"thing1":"title","number2":"score"}},"task_returned":{"id":"...","fields":{"thing1":"title","name2":"student","thing3":"reason"}}}
+```
 
-- [ ] 小程序后台「订阅消息」里可用的模板 ID：建议至少 3 个
-  - [x] 作业发布通知：`qV_nVYIcFpaTP71yWyu-6Ln1haEHfb5UEk93UkPKebQ`（已配进 `HM_WX_SUBSCRIBE_TEMPLATES`）
-  - [ ] 作业批阅完成通知：用户自建模板（作业名称 + 批改分数），**等审核**
-  - [ ] 作业被打回通知：建议新建（作业名称 + 学员姓名 + 打回原因），**等审核**
-- [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET` 已在云端配置（2026-11-25），但**仍有两个阻断**（见下）
-  - AppSecret 只放云托管环境变量，**禁止入库/写文档**
-- [x] **阻断 1 已解决**：`HM_WX_APP_SECRET` 已换成真实值（`hm-lesson-027` 日志里请求 URL 显示 `secret=***`，脱敏生效）；AppID 仍是 `wxc675e12f2b7cef7a`。
-- [ ] **阻断 2 根因已定位，代码已备好，等控制台配置**：`hm-lesson-028` 的出网体检证明——`www.baidu.com` 的 443 可通（出口正常），只有 `api.weixin.qq.com` 被解析到 `169.254.10.1` 并拒连。控制台「云调用 → 开放接口服务」已开，但「微信令牌权限」列表为空（未放行任何接口），所以网关拒绝一切微信域名请求。
-  - 已实现：`HM_WX_CALL_MODE=cloud` 云调用通道（`pkg/wx` 新增 `NewCloudClient`/`NewCloudClientWithBaseURL`，不取 access_token、请求带 `http://api.weixin.qq.com`、由平台网关鉴权）；`conf.WXCallMode`（`normalizeCallMode` 容错，默认 `direct`）；`buildSubscriptions` 按模式选客户端，云调用模式跳过 token 探测并打 info 日志。
-  - 待用户操作：控制台「微信令牌权限」→「配置接口」→ 添加**发送订阅消息**（`subscribeMessage.send`）；环境变量加 `HM_WX_CALL_MODE=cloud`；重新发布。
-  - 文档：`docs/deploy-wechat-cloudrun.md` §7.1.1 写了完整步骤与日志判读表。
-- [x] 启动日志可自检：云调用模式打「微信订阅消息使用云调用通道」；直连模式打「微信 access_token 获取成功，订阅消息可发送」。
-- [ ] 确认工具类目下这些模板可选（个人主体 + 未认证，模板库可能受限）
-- [x] 确认家长端是否已有 `openid`（`guardians.openid` 列已存在；登录时从 `X-WX-OPENID` 采集，需 `X-WX-SOURCE` 非空）
+### 3. 上线安全收尾
 
-**实现清单**
-
-- [x] 后端新增 `guardians.openid` 采集
-  - 家长登录接口从网关注入的 `X-WX-OPENID` 取 openid（要求 `X-WX-SOURCE` 非空，拒绝客户端自报）；失败不阻断登录
-- [x] 新增 `subscription_grants` 表（迁移 `000006_*.up/down.sql`）
-  - `id / guardian_id / template_key / remaining / last_requested_at / created_at / updated_at`，`UNIQUE(guardian_id, template_key)`
-  - 一次性订阅每 accept 一次只能发一条，发送成功后 `remaining - 1`；额度上限 3
-- [x] 新增 `pkg/wx`（`client.go` + `subscribe.go`）
-  - `access_token` 获取与缓存（单实例内存 + 过期前 5 分钟刷新；多实例前必须改共享缓存）
-  - `SendSubscribe(ctx, msg)`；错误分永久/可重试，失败只落 `last_error`，不影响业务事务
-- [x] 通知落 `notification_deliveries`（新表）
-  - 发布/批阅在**同一事务内**入队，进程内 worker 每 30 秒发送；请求路径不调微信
-- [x] 家长端「开启作业提醒」按钮（`pages/portal/index.vue`）
-  - 由用户点击触发 `wx.requestSubscribeMessage({ tmplIds })`，逐个回传 `accept/reject` 到 `POST /api/v1/portal/subscriptions`
-  - 未配置模板时按钮不展示（`configured=false`）
-- [x] 深链
-  - `page` 用 `pages/portal/tasks/detail?id=<assignment_id>`
-  - 注意：家长任务接口里的 `id` 是 **assignment id**，不是 task id
-- [ ] 订阅消息模板字段映射（按实际模板字段名填 `HM_WX_SUBSCRIBE_TEMPLATES`，见 `docs/deploy-wechat-cloudrun.md` §7.1）
-
-**验收**
-
-- [ ] 家长点“允许通知”后，教师发布任务，家长微信收到服务通知
-- [ ] 教师批阅/打回后，家长收到对应通知，点开进入正确作业
-- [ ] 家长拒绝/未授权时，业务不报错、不重复弹
-- [x] 模板 ID 未配置时后端 no-op，不影响发布/批阅（单测覆盖 `DeliverOnce`/worker 禁用分支）
-- [ ] 真实真机验证（开发者工具不能完整验证服务通知）
-
----
-
-### 2. 上线安全收尾
-
-- [ ] 关闭云托管「公网访问」（当前临时公网 URL 仍开放）
-- [ ] 删除云托管环境变量 `HM_BOOTSTRAP_PASSWORD`
-- [ ] 轮换 MySQL root 密码；新建只对 `hm_lesson.*` 有权限的应用账号
-- [ ] 确认云托管构建的是最新 commit（改环境变量只生成配置版本，不会重新构建镜像）
+- [ ] 关闭云托管「公网访问」（当前临时公网 URL 仍开放，仅联调用）
+- [ ] 删除环境变量 `HM_BOOTSTRAP_PASSWORD`
+- [ ] 轮换 MySQL root 密码；新建只对 `hm_lesson.*` 有权限的应用账号（`HM_DB_DSN` 或 `MYSQL_*` 记得同步改）
 - [ ] 备份演练：云托管 MySQL 备份 + COS 版本/生命周期
-- [ ] 图片上传补服务端校验：MIME、大小、图片解码、对象键
+- [ ] 图片/文件上传补服务端校验：MIME、大小、图片解码、对象键由服务端生成
 
-### 3. 真机验收（M3 遗留）
+### 4. 真机验收清单（逐条打勾）
 
-- [ ] 家长提交作业：真实相机拍照 → `wx.cloud.uploadFile` → fileID → 提交
-- [ ] 教师批阅：拍照/相册上传批改图 → 家长端可看
-- [ ] 家长端通知弹窗实际点按（站内通知）
-- [ ] 逾期任务红色数字（不是整块红底）
-- [ ] 任务模板 PATCH 的零值元数据（D-07）复测
+- [ ] M3：相机拍照 → `wx.cloud.uploadFile` → fileID → 提交；教师批改图回看
+- [ ] M5-b：上传一份讲义 → 家长端下载并 `wx.openDocument` 打开；无权分组看不到
+- [ ] M6：发布通知 → 家长在消息中心确认 → 教师看到已确认数、催办生效
+- [ ] M7：建班、加成员、记一次课（出勤三态）
+- [ ] M8/M9：门户五卡数字与看板四组数字一致
+- [ ] 家长密码登录、绑定码首次设密、初始密码转告、删除保护 409
+- [ ] `system` 登录、成员管理看不到它、控制台查询与操作记录、改密后重启仍生效
+
+### 5. 测试数据清理（需用户确认后执行）
+
+- [ ] 已关闭的旧任务 `test`（id `01a20df3-ea8c-7b17-998a-1c629e1e24f0`）
+- [ ] 若还残留旧家长 `13000000000`，在「家长账号 → 全部账号」删除
+- [ ] `hm-lesson-023` 时期留下的 8 小时偏移脏数据（`bookings.reviewed_at`、`lesson_ledger.occurred_at` 旧行），清洗前需备份
 
 ---
 
-## P1：业务功能（按顺序）
+## P1：功能补完（按价值排序）
 
-### M5 学员删除 + 内部系统账号（2026-11-25 新增，已完成待部署验证）
+### 自动化通知（AF-07 ~ AF-12）
 
-> 背景：测试与误建的学员档案无法清理，且家长绑定会一直留着；另外需要一个只在内部使用的调试账号。见 ADR-031。
+> 当前 `notifications.guardian_id NOT NULL`，只能通知家长。要通知老师需先给 `notifications` 加教师维度（新迁移），再做：
 
-- [x] 学员删除：`DELETE /api/v1/students/{id}`（仅 owner）物理删除档案，并按外键顺序清理作业/预约/课时/绑定/跟进/班课成员
-- [x] 删除后家长回到「未绑定」：`student_guardians` 被删除，家长无在读学员则自动 `disabled`，可在「家长账号」里删除或重新绑定新学员
-- [x] 财务纪律：存在课时流水时返回 409 `STUDENT_HAS_LESSON_LEDGER`，必须 `?force=1` 并在前端第三次确认后才连流水一起删除
-- [x] 前端：学员详情页「危险操作 → 删除学员档案」，两次弹窗确认（有流水时三次）
-- [x] 系统账号：迁移 `000010_system_account`（`staff.hidden`）；用户名固定 `system`、隐藏、owner 权限、支持自助改密；初始密码取 `HM_SYSTEM_PASSWORD`
-- [x] 隐藏：成员列表与工作台 `staff_total` 不含它，`PATCH /api/v1/staff/{id}` 对它返回 403 `SYSTEM_ACCOUNT_LOCKED`
-- [ ] 验证：部署后删一次测试学员（`test`），确认家长 `13000000000` 变为未绑定并可删除
-- [ ] 验证：用 `system` + `HM_SYSTEM_PASSWORD` 登录，确认成员管理里看不到自己，改密后重启仍生效
+- [ ] AF-07 家长提交预约 → 通知老师
+- [ ] AF-08/AF-09 审核通过/驳回 → 通知家长
+- [ ] AF-10 课前 24h 提醒（需定时任务 + 订阅消息模板）
+- [ ] AF-11 课后未补录次日 09:00 提醒老师
+- [ ] AF-12 余额 ≤2 提醒老师（目前只在工作台/看板显示数字）
 
-### M2 家长账号体系（2026-11-25 新增，已完成待部署验证）
+### 导出（其余三类）
 
-> 背景：此前家长只要知道手机号就能登录，等于没有凭据；测试里还出现「申请后直接 active 但没有学员关联」的脏账号，审批页看不到、也没人能清理。现改为手机号 + 密码登录，并由 owner 管理账号生命周期（ADR-030）。
+- [ ] 客户名单、作业提交名单、课时流水导出 xlsx —— 按 §3.9 应走异步 `jobs` + COS，请求内只返回 fileID（回执导出已在请求内完成，≤2000 行）
 
-- [x] 家长密码：`guardians.password_hash`（Argon2id，6~32 位）+ `last_login_at`；迁移 `000009_guardian_passwords`
-- [x] 家长登录：`{phone,password}`；首次用 `{phone,code,password}` 走绑定码并当场设密；无密码返回 `PASSWORD_REQUIRED`
-- [x] 审批设初始密码：`POST /api/v1/guardians/{id}/approve {student_id,password}`，留空则由服务端生成一次性 8 位并只在响应返回
-- [x] 自助改密：家长 `POST /api/v1/auth/guardian/password`（6~32，首次可免旧密码）；老师 `POST /api/v1/auth/password`（8~64，需旧密码）
-- [x] 账号总览与清理：`GET /api/v1/guardians`（学员名、是否设密、上次登录、可清理标记）、owner 重置密码、`DELETE /api/v1/guardians/{id}`（有在读学员返回 409；连带清通知/订阅额度/关联，课时流水保留）
-- [x] 与学员同步：学员状态改为非 `active` 且家长无在读学员 → 家长自动 `disabled`
-- [x] 前端：家长登录页改造、`pages/portal/password`、`pkg-teacher/pages/password`、`pkg-teacher/pages/guardians` 双标签页（待审批/全部账号 + 筛选 + 重置 + 删除）
-- [ ] 部署后删掉测试期遗留的家长 `13000000000` 及其绑定申请（需 owner 在「家长账号 → 全部账号」里删；或先归档其学员）
-- [ ] 真机验证：密码登录、绑定码首次设密、初始密码转告、删除保护（409）
+### 资料与班课的二期项
 
-### M4 一对一预约 / 课时 / 班课
+- [ ] 单份资料在分类矩阵之上的额外分组覆盖
+- [ ] 班课计费/课包（当前班课不扣课时，只有出勤与内容记录）
+- [ ] 资料与通知/消息中心联动（发资料时推送）
 
-> 2026-11-25 进展：预约与课时的**后端 + 小程序页面**已完成并本地验证（`go build/vet/test` 全绿、`vue-tsc` 0、`uni build -p mp-weixin` DONE）。迁移 `000007_booking_lesson` 与真实 MySQL 5.7 尚需部署时验证。
+### 门户与导师端补完
 
-- [x] 可预约时段：教师建时段（单条 + 按周批量）、家长只看可预约（`/api/v1/slots`、`/api/v1/portal/slots`；教师页 `pkg-teacher/pages/slots`）
-- [x] 预约：提交即锁时段（`bookings.active_flag` 生成列 + `uq_bookings_active_slot`）；审核通过/驳回；冲突先审先得（409 `BOOKING_SLOT_TAKEN`）
-- [x] 消课：教师标记完成才写 `lesson_ledger`（`consume_ref_id` 生成列保证只扣一次，幂等）；未到课不扣课时（Q8）
-- [x] 课时账户：总购买/已消耗/剩余/有效期；≤2 标记 `low_balance`，余额 0 禁止预约（422 `LESSON_HOURS_EXHAUSTED`）；充值/调整（调整原因必填）
-- [ ] 班课：班级、名单、每次上课记录（班课不扣课时）
-- [x] 家长门户补：我的预约（提交/撤回）、课时余额与流水（`pages/portal/booking`、`/api/v1/portal/lesson-account`）
-- [ ] 预约通知：AF-07/08/09 需要 `notifications` 支持教师维度（`guardian_id` 目前 NOT NULL），随 M6 一起改
-
-### M5 资料库（2026-11-25 已完成待真机验证）
-
-> 迁移 `000011_materials`（`material_categories` / `material_visibility` / `materials` / `material_download_logs`）。注意 up 里先 `DROP TABLE IF EXISTS materials`，因为 `000002` 留过旧形态的单文件表。
-
-- [x] 目录：六分类内置（班课讲义/一对一/月考真题/试听体验/招生课表/课堂录播），启动 `EnsureDefaults` 幂等补齐
-- [x] 分类 × 分组权限矩阵（服务端判定，owner 可改；家长端只返回 `published` 且矩阵允许其分组的资料）
-- [x] 上传到 COS（`wx.cloud.uploadFile`）→ `file_ids` JSON 数组 → 资料记录；最多 9 个附件
-- [x] 下载：家长先 `POST /api/v1/portal/materials/{id}/download` 校验并写 `material_download_logs`，再用 `wx.cloud.downloadFile` + `wx.openDocument` 打开
-- [x] 家长端「我的资料」（按分类分组展示，三态齐全）
-- [ ] 验证：真机上传一份讲义、家长端下载并打开；确认无权分组的家长看不到
-- [ ] 二期：单份资料在矩阵之上的额外分组覆盖
-
-### M6 通知回执 + 导出
-
-- [ ] 通知表 + 按人回执
-- [ ] 未确认催办；48h 自动再推
-- [ ] 回执导出 xlsx
-- [ ] 客户/作业提交/课时流水导出 xlsx（异步任务 + COS）
-
-### M8/M9
-
-- [ ] 家长门户首页 5 卡片完整（任务/作业/预约/资料/课时）
-- [ ] 看板四组：客户结构/交付质量/一对一运营/待办
-- [ ] 图表不做 ECharts，用卡片/进度条/名单下钻
+- [ ] 家长端课时流水明细页（目前只有余额与近期流水）
+- [ ] 预约历史列表（家长端目前是「我的预约」当前视图）
 
 ---
 
 ## P2：系统能力补课
 
 - [ ] WebSocket：`wx.cloud.connectContainer` + 首帧 token 认证
-- [ ] Outbox / jobs：定时触发 + 行锁；不要依赖请求返回后的 goroutine
-- [ ] `audit_logs` 业务写入（登录、权限、删除、导出、审批）
+- [ ] Outbox / jobs：定时触发 + 行锁；不依赖请求返回后的 goroutine（当前订阅/通知再推是进程内 worker，MVP `min=max=1` 下可用）
+- [ ] `audit_logs` 业务写入扩展到登录/权限/导出/审批（当前只覆盖删除类）
 - [ ] 登录限流（IP + 账号；无 Redis 用 MySQL 计数表）
 - [ ] proto 真正生成并用于 HTTP 层（当前是手写 JSON handler；`buf lint` 尚未本地跑）
 - [ ] MySQL 集成测试 / E2E（testcontainers 或 Debian 环境）
@@ -173,9 +126,9 @@
 
 - [ ] 输入框/弹层在真机上的键盘遮挡复验
 - [ ] 家长端任务深链、空态、错误态统一
-- [ ] 教师端任务模板管理完整（当前 PATCH 已做，列表/删除可用性复验）
+- [ ] 教师端任务模板管理完整（PATCH 已做，列表/删除可用性复验）
 - [ ] 老页面 `pages/index/index.vue` 已不注册，确认没有遗留 `reLaunch` 指向
-- [ ] 生产测试数据清理：`test` 学员、`13000000000` 家长、已关闭旧任务（需用户确认）
+- [ ] 看板「转化率」口径：需要分组变更历史表才能精确，当前用近似口径（已在代码注释与文档标注）
 
 ---
 
@@ -183,17 +136,19 @@
 
 | 编号 | 内容 | 状态 |
 | --- | --- | --- |
-| D-13 | 家长登录返回教师字段 `note/tags/next_follow_up_at` | 代码已修，随最新 commit 验证生产响应 |
+| D-13 | 家长登录曾返回教师字段 `note/tags/next_follow_up_at` | 代码已修，随最新 commit 复验生产响应 |
 | D-07 | 任务模板 PATCH 曾返回零值元数据 | 代码已修，未复测 |
 | D-12 | 拍照/批改图仅 API 层验证 | 待真机 |
 | — | 云托管公网访问仍开启 | 待关闭 |
-| — | MySQL root 仍在使用 | 待换应用账号 |
-| — | 图片只存 fileID，无 MIME/大小/解码校验 | 待补 |
-| — | WebSocket、Outbox 调度、登录限流、审计业务写入未实现 | 见 P2 |
+| — | MySQL root 仍在使用（密码曾在对话中出现） | 待改密 + 换应用账号 |
+| — | 图片/文件只存 fileID，无 MIME/大小/解码校验 | 待补 |
+| — | 看板转化率为近似口径（无分组历史） | 已知限制，已文档化 |
+| — | 订阅消息两个模板待审核 | 阻塞真机验证 |
+| — | WebSocket、Outbox 调度、登录限流、审计全量写入未实现 | 见 P2 |
 
 ---
 
-## 明确不做
+## 明确不做（范围外）
 
 即时通讯/聊天/客服会话/群聊/私信、付费课程/在线支付、录播、短信兜底、自动最优排课。
 

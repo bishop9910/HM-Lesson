@@ -245,6 +245,8 @@ backend/
 - `class_sessions`：日期、内容要点、出勤记录（`present` / `absent` / `leave`，逐人）。
 - 班课**不扣课时**、不产生课时流水；计费在课包维度，系统仅记录出勤与内容。
 
+> **实现现状（2026-11-25，迁移 `000012_notices_delivery`，复用 `000002` 已建表）**：见 ADR-032。接口 9 个——`GET/POST /api/v1/classes`、`GET/PATCH /api/v1/classes/{id}`、`POST /api/v1/classes/{id}/archive`、`POST /api/v1/classes/{id}/members`、`DELETE /api/v1/classes/{id}/members/{student_id}`、`POST /api/v1/classes/{id}/sessions`、`DELETE /api/v1/classes/{id}/sessions/{session_id}`；状态只有 `active`/`archived`（归档代替 planned/ongoing/finished），出勤以 JSON 存在 `class_sessions.attendance`，班课不产生 `lesson_ledger` 流水。教师端页面 `pkg-teacher/pages/classes`。**未做**：班课计费/课包、班课通知联动。
+
 ### 3.6 M5 资料库与权限
 
 - 资料分类（`material_categories`）+ 分组可见矩阵（`material_visibility`：category × group → bool），初始值按蓝本表 7。
@@ -269,6 +271,14 @@ backend/
 - 回执可导出（姓名、手机号、状态、确认时间）。
 - 通知同时进入小程序消息中心；如家长授权了订阅消息则叠加推送。
 
+> **实现现状（2026-11-25，迁移 `000012_notices_delivery`，复用 `000002` 已建表）**：见 ADR-032。
+> - 状态只有 `draft`/`sent`（发送在一次事务内完成，没有 `sending`）；受众类型 `all`/`group`/`students`，附件 `file_ids` JSON（≤9 个）。
+> - 发送 `POST /api/v1/notices/{id}/send`：快照受众 → 每家长 `INSERT IGNORE` 一条回执 → 写 `notifications(kind='notice_published')`；受众为空返回 400 `NOTICE_NO_AUDIENCE`。
+> - 回执：`GET /api/v1/notices/{id}/receipts`（可按 `status` 过滤，≤2000 行）、`POST /api/v1/notices/{id}/remind`（写 `reminded_at` + 站内信 `notice_remind`）、家长端 `GET /api/v1/portal/notices` 与 `POST /api/v1/portal/notices/{id}/confirm`（幂等）。
+> - 48 小时自动再推：进程内 worker 每 10 分钟扫 `renotified_at IS NULL AND created_at <= now-48h`（一次 ≤200 条），只推一次；不引入独立容器。
+> - 回执导出：`GET /api/v1/notices/{id}/receipts.xlsx`（owner，excelize，请求内生成并直接流式返回，≤2000 行）；客户名单/作业提交名单/课时流水导出仍未做（待 P2 异步 `jobs`）。
+> - 家长端消息中心页面 `pages/portal/notices`，教师端 `pkg-teacher/pages/notices`。
+
 ### 3.8 M9 看板
 
 四组指标（口径固定，写入接口文档与前端文案）：
@@ -279,6 +289,8 @@ backend/
 4. **待办**：待回访数、已通过但时间已过未完成预约数、未确认回执数、余额 ≤2 学员数。
 
 实现：单条聚合 SQL / 物化视图按需；结果进程内缓存 60 秒（有 Redis 时用 Redis）；`timezone` 固定上海。响应必须小于 100 KB（云托管响应上限 1000 KiB），指标只返回聚合值，名单另走分页/导出。
+
+> **实现现状（2026-11-25）**：`GET /api/v1/dashboard/board?from=&to=`（默认本月自然月，RFC3339），返回四组指标 + `generated_at`；`DashboardUsecase` 用互斥锁 + 60 秒进程内缓存（同一区间命中直接返回），不引入 Redis。口径限制：**转化率用「区间新增学员的当前分组」近似**（无分组变更历史表），已在 `internal/data/dashboard.go` 注释与 TODO 记录；「本周排课数」按 ISO 周（周一起）统计 `approved` 预约；「本月课时消耗」取 `lesson_ledger` 中 `type='consume'` 的 `SUM(-delta_hours)`。前端 `pkg-teacher/pages/board`，纯卡片/进度条，不用 ECharts。
 
 ### 3.9 导出
 
@@ -575,9 +587,12 @@ backend/
 | GET | `/api/v1/lesson-ledger` | 流水（按学员/月份） |
 | GET/POST | `/api/v1/classes` | 班级 |
 | GET/PATCH | `/api/v1/classes/{id}` | 班级详情 |
+| POST | `/api/v1/classes/{id}/archive` | 归档班级 |
 | POST | `/api/v1/classes/{id}/members` | 加/移除学员 |
-| GET/POST | `/api/v1/classes/{id}/sessions` | 上课记录 |
-| PATCH | `/api/v1/class-sessions/{id}/attendance` | 出勤 |
+| DELETE | `/api/v1/classes/{id}/members/{student_id}` | 移出学员 |
+| GET/POST | `/api/v1/classes/{id}/sessions` | 上课记录（出勤在 JSON 里） |
+| DELETE | `/api/v1/classes/{id}/sessions/{session_id}` | 删除上课记录 |
+| PATCH | `/api/v1/class-sessions/{id}/attendance` | 出勤（本期未实现，出勤随建课次一起提交） |
 
 #### 资料 / 通知 / 文件
 
@@ -593,9 +608,11 @@ backend/
 | GET | `/api/v1/files/{id}/download` | S/G | 校验权限后返回 fileID/短期临时链接 |
 | POST | `/api/v1/files/upload` | S/G | 仅 H5/本地调试的服务端流式上传（≤30MB，生产小程序不走） |
 | GET/POST | `/api/v1/notices` | S | 通知 |
+| GET/PATCH/DELETE | `/api/v1/notices/{id}` | S | 通知详情（仅草稿可改/删） |
 | POST | `/api/v1/notices/{id}/send` | S | 发送 |
 | GET | `/api/v1/notices/{id}/receipts` | S | 回执名单 |
 | POST | `/api/v1/notices/{id}/remind` | S | 催办 |
+| GET | `/api/v1/notices/{id}/receipts.xlsx` | S(owner) | 回执导出 xlsx |
 | GET | `/api/v1/portal/notices` | G | 我的通知 |
 | POST | `/api/v1/portal/notices/{id}/confirm` | G | 确认回执 |
 
@@ -613,6 +630,7 @@ backend/
 | GET | `/api/v1/notifications` | S/G | 消息中心 |
 | POST | `/api/v1/notifications/read` | S/G | 已读 |
 | GET | `/api/v1/dashboard/summary` | S | 四组指标 |
+| GET | `/api/v1/dashboard/board` | S | 看板四组（M9，60 秒进程内缓存） |
 | GET | `/api/v1/dashboard/todos` | S | 待办 |
 | POST | `/api/v1/exports` | S | 创建导出 |
 | GET | `/api/v1/exports/{id}` | S | 导出状态/下载 |

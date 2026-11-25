@@ -720,6 +720,44 @@ func (r *crmRepo) PortalHome(ctx context.Context, guardianID string) (*biz.Porta
 		if balance.Valid {
 			out.BalanceHours = balance.Float64
 		}
+		// 待确认回执（只统计已发送且需要回执的通知）。
+		_ = r.db.WithContext(ctx).Raw(
+			`SELECT COUNT(*) FROM notice_receipts nr JOIN notices n ON n.id = nr.notice_id
+			 WHERE nr.guardian_id = ? AND nr.status = 'pending' AND n.status = 'sent' AND n.need_receipt = 1`, guardianID).
+			Scan(&out.PendingReceipts).Error
+		// 待上预约：已通过且还没结束的时段。
+		var upcoming struct {
+			Total  int
+			NextAt *time.Time
+		}
+		_ = r.db.WithContext(ctx).Raw(
+			`SELECT COUNT(*) AS total, MIN(s.start_at) AS next_at
+			 FROM bookings b JOIN slots s ON s.id = b.slot_id
+			 WHERE b.guardian_id = ? AND b.status = 'approved' AND s.start_at > NOW(3)`, guardianID).
+			Scan(&upcoming).Error
+		out.UpcomingBookings = upcoming.Total
+		out.NextBookingAt = upcoming.NextAt
+		// 可见资料数量与最新一份，按家长学员分组过滤（与 /portal/materials 一致）。
+		var material struct {
+			Total int
+			Title string
+		}
+		_ = r.db.WithContext(ctx).Raw(
+			`SELECT COUNT(DISTINCT m.id) AS total,
+			        COALESCE((SELECT m2.title FROM materials m2
+			                    JOIN material_visibility v2 ON v2.category_id = m2.category_id AND v2.visible = 1
+			                    JOIN students s2 ON s2.group_code = v2.group_code AND s2.status = 'active' AND s2.archived_at IS NULL
+			                    JOIN student_guardians sg2 ON sg2.student_id = s2.id
+			                   WHERE m2.status = 'published' AND sg2.guardian_id = ?
+			                   ORDER BY m2.published_at DESC LIMIT 1), '') AS title
+			 FROM materials m
+			 JOIN material_visibility v ON v.category_id = m.category_id AND v.visible = 1
+			 JOIN students s ON s.group_code = v.group_code AND s.status = 'active' AND s.archived_at IS NULL
+			 JOIN student_guardians sg ON sg.student_id = s.id
+			 WHERE m.status = 'published' AND sg.guardian_id = ?`, guardianID, guardianID).
+			Scan(&material).Error
+		out.MaterialsCount = material.Total
+		out.LatestMaterialName = material.Title
 	}
 	return out, nil
 }

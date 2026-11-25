@@ -6,7 +6,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ARG VERSION=0.1.0
+ARG VERSION=1.3.6
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X github.com/bishop9910/hm-lesson/backend/internal/version.Version=${VERSION}" -o /out/hm ./cmd/hm
 
 # 运行镜像必须用 Debian/Ubuntu 系：云托管会注入 /app/cert/initenv.sh

@@ -23,6 +23,9 @@ type ActionKey =
   | "import"
   | "staff"
   | "materials"
+  | "classes"
+  | "notices"
+  | "board"
   | "password"
   | "system";
 
@@ -84,6 +87,9 @@ const actions = computed<ActionItem[]>(() => {
     },
     { key: "students", title: "学员档案", desc: "分组、跟进、回访", icon: "学" },
     { key: "materials", title: "资料库", desc: "讲义、真题、分组可见", icon: "料" },
+    { key: "classes", title: "班课", desc: "班级、成员、出勤", icon: "班" },
+    { key: "notices", title: "通知", desc: "发布通知、回执、催办", icon: "知" },
+    { key: "board", title: "看板", desc: "客户结构、交付、待办", icon: "看" },
     { key: "guardians", title: "家长账号", desc: "审批、设密码、清理", icon: "家", ownerOnly: true },
     { key: "import", title: "导入学员", desc: "Excel 批量导入", icon: "导", ownerOnly: true },
     { key: "staff", title: "成员管理", desc: "老师账号与权限", icon: "员", ownerOnly: true },
@@ -144,6 +150,9 @@ function go(key: ActionKey): void {
     import: "/pkg-teacher/pages/import/index",
     staff: "/pkg-teacher/pages/staff/index",
     materials: "/pkg-teacher/pages/materials/index",
+    classes: "/pkg-teacher/pages/classes/index",
+    notices: "/pkg-teacher/pages/notices/index",
+    board: "/pkg-teacher/pages/board/index",
     password: "/pkg-teacher/pages/password/index",
     system: "/pkg-teacher/pages/system/index",
   };

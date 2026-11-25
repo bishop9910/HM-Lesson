@@ -106,6 +106,12 @@ type PortalHome struct {
 	BalanceHours  float64
 	GuardianName  string
 	GuardianPhone string
+	// M8 门户五卡片：待确认回执、待上预约、可见资料。
+	PendingReceipts    int
+	UpcomingBookings   int
+	NextBookingAt      *time.Time
+	MaterialsCount     int
+	LatestMaterialName string
 }
 
 // PortalTask 是家长端展示的待办作业摘要。
