@@ -214,6 +214,7 @@ const res = await wx.cloud.uploadFile({
 | `HM_BOOTSTRAP_NAME` | `鹤鸣老师` | 首次启动创建 owner 用；创建后删除 |
 | `HM_BOOTSTRAP_PHONE` | `138...` | 首个 owner 手机号；创建后删除 |
 | `HM_BOOTSTRAP_PASSWORD` | 强密码 | 首个 owner 密码（≥8）；创建后删除并改密 |
+| `HM_SYSTEM_PASSWORD` | 强密码 | 内部系统账号（用户名固定 `system`）的初始密码；只在首次创建或密码为空时写入，之后可在小程序自助改密。不需要该账号时留空 |
 
 > 云托管自动注入 `CBR_ENV_ID`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_ADDRESS`、`COS_BUCKET`、`COS_REGION`。后端 `internal/conf.buildDSN()` 已做兼容：`HM_DB_DSN` 为空时用 `MYSQL_*` 拼 DSN；存储配置缺省时用 `COS_*`。**不要**把这些值再硬编码进 Dockerfile 或仓库。
 

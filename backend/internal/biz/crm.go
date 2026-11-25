@@ -22,6 +22,7 @@ var (
 	ErrWrongPassword       = errors.New("wrong password")
 	ErrPasswordNotSet      = errors.New("password not set")
 	ErrGuardianHasStudents = errors.New("guardian still bound to students")
+	ErrStudentHasLedger    = errors.New("student has lesson ledger")
 )
 
 var (
@@ -163,6 +164,14 @@ type CreateStudentInput struct {
 	Note           string
 }
 
+// StudentDeleteStats 汇总删除学员会连带清理的数据，供前端二次确认展示。
+type StudentDeleteStats struct {
+	TaskAssignments int
+	Bookings        int
+	LessonLedger    int
+	Guardians       int
+}
+
 // Notification 是家长端站内通知，用于作业发布/批阅/打回弹窗。
 type Notification struct {
 	ID        string
@@ -180,6 +189,10 @@ type CRMRepo interface {
 	GetStudent(ctx context.Context, id string) (*Student, error)
 	CreateStudent(ctx context.Context, s *Student) (*Student, error)
 	UpdateStudent(ctx context.Context, id string, in UpdateStudentInput) (*Student, error)
+	// StudentDeleteStats 统计删除学员会连带清理的数据量。
+	StudentDeleteStats(ctx context.Context, studentID string) (StudentDeleteStats, error)
+	// DeleteStudent 物理删除学员档案及其任务/预约/课时/绑定数据。
+	DeleteStudent(ctx context.Context, studentID string) error
 	AddFollowUp(ctx context.Context, f *FollowUp) (*FollowUp, error)
 	ListFollowUps(ctx context.Context, studentID string, limit int) ([]FollowUp, error)
 	ListPendingGuardians(ctx context.Context) ([]GuardianRequest, error)
@@ -291,6 +304,28 @@ func (uc *CRMUsecase) UpdateStudent(ctx context.Context, id string, in UpdateStu
 		return nil, ErrInvalidStudent
 	}
 	return uc.repo.UpdateStudent(ctx, id, in)
+}
+
+// DeleteStudent 物理删除学员档案（仅 owner）。
+//
+// 删除会解除该学员与家长的全部绑定：家长随即进入“未绑定”状态（若已无在读学员则置 disabled），
+// 之后可被直接删除或重新绑定新学员。学员若有课时流水，必须由调用方显式 force 才会连同流水一起删除，
+// 避免误删账目；前端因此需要二次确认。
+func (uc *CRMUsecase) DeleteStudent(ctx context.Context, actor *Staff, studentID string, force bool) (StudentDeleteStats, error) {
+	if actor == nil || actor.Role != RoleOwner {
+		return StudentDeleteStats{}, ErrForbidden
+	}
+	stats, err := uc.repo.StudentDeleteStats(ctx, studentID)
+	if err != nil {
+		return StudentDeleteStats{}, err
+	}
+	if stats.LessonLedger > 0 && !force {
+		return stats, ErrStudentHasLedger
+	}
+	if err := uc.repo.DeleteStudent(ctx, studentID); err != nil {
+		return stats, err
+	}
+	return stats, nil
 }
 
 func (uc *CRMUsecase) AddFollowUp(ctx context.Context, actor *Staff, studentID, method, content, concern, nextAction string, next *time.Time) (*FollowUp, error) {

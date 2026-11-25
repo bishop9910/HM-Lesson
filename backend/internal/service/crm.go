@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -258,6 +259,36 @@ func deref(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+// DeleteStudent 物理删除学员档案（仅 owner）。学员有课时流水时必须带 force=1 二次确认。
+func (s *Server) DeleteStudent(ctx khttp.Context) error {
+	actor, err := s.requireStaff(ctx, true)
+	if err != nil {
+		return err
+	}
+	id := ctx.Vars().Get("id")
+	if id == "" {
+		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "缺少 id")
+	}
+	force := ctx.Query().Get("force") == "1" || strings.EqualFold(ctx.Query().Get("force"), "true")
+	stats, err := s.crm.DeleteStudent(ctx, actor, id, force)
+	if err != nil {
+		if errors.Is(err, biz.ErrStudentHasLedger) {
+			return fail(ctx, http.StatusConflict, "STUDENT_HAS_LESSON_LEDGER",
+				fmt.Sprintf("该学员有 %d 条课时流水，删除会连同流水一起清除；确认请带 force=1 重试", stats.LessonLedger))
+		}
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{
+		"ok": true,
+		"deleted": map[string]any{
+			"task_assignments": stats.TaskAssignments,
+			"bookings":         stats.Bookings,
+			"lesson_ledger":    stats.LessonLedger,
+			"guardians":        stats.Guardians,
+		},
+	})
 }
 
 func (s *Server) ListFollowUps(ctx khttp.Context) error {
@@ -684,6 +715,8 @@ func mapCRMBizError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusBadRequest, "WEAK_PASSWORD", "密码长度需要 6~32 位")
 	case errors.Is(err, biz.ErrGuardianHasStudents):
 		return fail(ctx, http.StatusConflict, "GUARDIAN_HAS_STUDENTS", "该家长仍绑定在读学员，请先归档学员")
+	case errors.Is(err, biz.ErrStudentHasLedger):
+		return fail(ctx, http.StatusConflict, "STUDENT_HAS_LESSON_LEDGER", "该学员有课时流水，请确认后带 force=1 重试")
 	default:
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "操作失败")
 	}

@@ -127,6 +127,7 @@ PATCH /api/v1/staff/{id}
 
 GET/POST /api/v1/students
 GET/PATCH /api/v1/students/{id}
+DELETE /api/v1/students/{id}           # 仅 owner；前端两次确认；有课时流水时 409 STUDENT_HAS_LESSON_LEDGER，需 ?force=1
 GET/POST /api/v1/students/{id}/follow-ups
 POST /api/v1/students/{id}/binding-codes
 GET  /api/v1/guardians/pending
@@ -226,7 +227,7 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
     改环境变量生成的是“配置版本”，复用旧镜像。代码改动必须让云托管从新 commit 构建；构建后确认镜像 tag 变化。
 
 11. **迁移**
-    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 9 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
+    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 10 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
 
 12. **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移（2026-11-25 线上事故）**
     `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。
@@ -244,6 +245,12 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 16. **家长账号随学员同步**
     学员 `status` 改成 `graduated`/`lost` 时，`data/crm.go` 的 `syncGuardianStatus` 会把“已无在读学员”的家长置为 `disabled`。因此「家长账号」页的“可清理”提示依赖学员状态正确维护；只在 `archived_at` 层面归档而没有改 `status` 的学员不会触发同步。
 
+17. **删除学员是不可撤销的物理删除（2026-11-25，ADR-031）**
+    `DELETE /api/v1/students/{id}` 仅 owner 可调用，前端必须两次确认。后端按外键顺序删 `submissions`→`notifications`→`task_assignments`→`bookings`→`lesson_ledger`→`lesson_accounts`→`binding_codes`→`follow_ups`→`class_members`→`student_guardians`→`students`，再把相关家长置为未绑定。学员存在课时流水时返回 409 `STUDENT_HAS_LESSON_LEDGER`，必须带 `?force=1` 才会删流水——**默认路径不允许静默丢账**。新增引用 `students(id)` 的表时，务必同步把删除顺序写进 `data/crm.go` 的 `DeleteStudent`，否则删除会因外键失败。
+
+18. **系统账号是隐藏的 owner（2026-11-25，ADR-031）**
+    `staff.hidden=1` 的账号（用户名固定 `system`）只在登录时以 owner 身份出现，`GET /api/v1/staff` 与工作台 `staff_total` 都不包含它，`PATCH /api/v1/staff/{id}` 对它返回 403 `SYSTEM_ACCOUNT_LOCKED`（改密走 `POST /api/v1/auth/password`）。初始密码取 `HM_SYSTEM_PASSWORD`：只在账号**首次创建**或 `password_hash` 为空时写入，之后自助改的密码不会被重启覆盖。
+
 ---
 
 ## 6. 最近完成（不要重复做）
@@ -255,6 +262,8 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 - 站内通知：发布/批阅/打回写 `notifications`，家长门户弹窗 + 已读；
 - 微信订阅消息：`000006` 两张表 + `pkg/wx` + 额度/队列 worker + 家长门户「开启提醒」（2026-11-25，见 §7）；
 - 家长账号体系：手机号+密码登录（`000009`）、审批设初始密码、家长/老师自助改密、owner 账号总览/重置密码/物理删除、学员状态同步停用（2026-11-25，见 §5.15–5.16）；
+- 学员删除（`000010` + `DELETE /api/v1/students/{id}`）：owner 两次确认，连带清理作业/预约/绑定，家长回到未绑定；有课时流水需 `?force=1`（ADR-031）；
+- 内部系统账号（`000010` `staff.hidden`）：用户名固定 `system`，仅内部测试与调试用，不在成员列表与统计中出现；初始密码取 `HM_SYSTEM_PASSWORD`，可自助改密；
 - 首页/工作台/页面纸面主题、长按批量操作、弹层修复、拍照/相册。
 
 生产已验证：M2/M3 主链路、逾期提交、删除、通知、批改图字段、家长隐私 DTO（D-13 随后提交）。

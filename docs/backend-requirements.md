@@ -99,7 +99,8 @@ backend/
 - 年级：`g1` / `g2` / `g3` / `other`；分组：`class` / `one_on_one` / `lead` / `visitor`；状态：`active` / `paused` / `archived` / `churned`。
 - 来源渠道：`douyin` / `xiaohongshu` / `referral` / `offline` / `other`。
 - 手机号唯一（家长维度）；同一手机号重复建学员时复用家长记录并提示。
-- 状态流转：`lead → one_on_one|class`、`visitor → lead`、任意在读 → `paused`、`paused → active`、`active|paused → archived|churned`。**禁止物理删除**；归档必须填原因，进入归档后不参与批量派发，但历史任务/课时/预约仍可查。
+- 状态流转：`lead → one_on_one|class`、`visitor → lead`、任意在读 → `paused`、`paused → active`、`active|paused → archived|churned`。**默认禁止物理删除**；归档必须填原因，进入归档后不参与批量派发，但历史任务/课时/预约仍可查。
+- **删除学员（2026-11-25 变更）**：仅 owner 可执行 `DELETE /api/v1/students/{id}`，前端必须两次弹窗确认。删除会物理清除该学员档案及其作业记录、预约、绑定码、跟进、班课成员与课时账户，并删除全部家长绑定关系；家长随即进入「未绑定」状态（若已无在读学员则置 `disabled`），可在「家长账号」里直接删除或重新绑定新学员。若该学员存在课时流水，接口返回 409 `STUDENT_HAS_LESSON_LEDGER`，必须在第三次确认里显式带 `?force=1` 才会连同流水删除（财务数据不静默丢失）。
 - 任何学员状态变更写审计日志。
 
 #### 3.1.2 标签
@@ -320,6 +321,7 @@ backend/
 7. 更换微信：老师端“重置绑定”清除 `wx_openid`，家长重新走 2~6。
 8. **凭据与账号生命周期（2026-11-25 落地，ADR-030）**：家长登录 = 手机号 + **密码**（Argon2id，6~32 位）；若用绑定码首次绑定，同一次请求里必须设置密码（缺密码返回 `PASSWORD_REQUIRED`）。审批通过时由 owner 设初始密码，留空则服务端生成一次性 8 位密码（只在响应里返回一次）。家长可自助改密；忘记密码由 owner 重置。老师（owner/assistant）可自助改密（8~64 位，需旧密码）。
 9. **家长账号清理**：学员状态改为非 `active` 后，家长若已无在读学员则自动 `disabled`；owner 可删除无在读学员的家长账号（`GUARDIAN_HAS_STUDENTS` 保护），删除连带清理站内通知、订阅额度与学员关联，历史课时/任务流水保留（操作人是老师）。
+10. **内部系统账号**：另有一个仅供内部测试与调试使用的系统账号（用户名固定 `system`），不出现在成员管理与统计中，初始密码由服务端环境变量注入，支持自助改密；不作为业务角色对外说明。
 
 **绑定码**：6 位数字，7 天有效，一次性；`POST /api/v1/students/{id}/binding-codes` 生成（owner），绑定成功后 `used_at` 落库；限流 5 次/小时/家长，失败 10 次锁定 1 小时。
 
@@ -487,7 +489,7 @@ backend/
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
 
-> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`POST /api/v1/auth/password`（老师自助改密）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`GET /api/v1/guardians`、`POST /api/v1/guardians/{id}/approve|reject|password`、`DELETE /api/v1/guardians/{id}`、`POST /api/v1/auth/guardian/login`（手机号+密码，首次可用绑定码并设密）、`POST /api/v1/auth/guardian/password`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET/DELETE /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`、`GET /api/v1/portal/notifications`、`POST /api/v1/portal/notifications/{id}/read|read-all`。表中其余接口为规划，尚未实现，前端不得假设可用。
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`POST /api/v1/auth/password`（老师自助改密）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH/DELETE /api/v1/students/{id}`（删除需 owner + 两次确认，含课时流水时需 `force=1`）、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`GET /api/v1/guardians`、`POST /api/v1/guardians/{id}/approve|reject|password`、`DELETE /api/v1/guardians/{id}`、`POST /api/v1/auth/guardian/login`（手机号+密码，首次可用绑定码并设密）、`POST /api/v1/auth/guardian/password`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET/DELETE /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`、`GET /api/v1/portal/notifications`、`POST /api/v1/portal/notifications/{id}/read|read-all`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 

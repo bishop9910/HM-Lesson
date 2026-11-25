@@ -165,6 +165,96 @@ func (r *crmRepo) UpdateStudent(ctx context.Context, id string, in biz.UpdateStu
 	return r.GetStudent(ctx, id)
 }
 
+// StudentDeleteStats 统计删除学员会连带清理的数据；不存在时返回 ErrStudentNotFound。
+func (r *crmRepo) StudentDeleteStats(ctx context.Context, studentID string) (biz.StudentDeleteStats, error) {
+	var out biz.StudentDeleteStats
+	var exists int64
+	if err := r.db.WithContext(ctx).
+		Raw("SELECT COUNT(*) FROM students WHERE id = ?", studentID).
+		Scan(&exists).Error; err != nil {
+		return out, err
+	}
+	if exists == 0 {
+		return out, biz.ErrStudentNotFound
+	}
+	var row struct {
+		TaskAssignments int
+		Bookings        int
+		LessonLedger    int
+		Guardians       int
+	}
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT
+		   (SELECT COUNT(*) FROM task_assignments WHERE student_id = ?) AS task_assignments,
+		   (SELECT COUNT(*) FROM bookings WHERE student_id = ?) AS bookings,
+		   (SELECT COUNT(*) FROM lesson_ledger WHERE student_id = ?) AS lesson_ledger,
+		   (SELECT COUNT(*) FROM student_guardians WHERE student_id = ?) AS guardians`,
+		studentID, studentID, studentID, studentID).Scan(&row).Error
+	if err != nil {
+		return out, err
+	}
+	out.TaskAssignments = row.TaskAssignments
+	out.Bookings = row.Bookings
+	out.LessonLedger = row.LessonLedger
+	out.Guardians = row.Guardians
+	return out, nil
+}
+
+// DeleteStudent 物理删除学员及其业务数据，并让相关家长回到“未绑定”状态。
+// 课时流水在调用方确认后才执行到这里；删除顺序按外键依赖从叶子到根。
+func (r *crmRepo) DeleteStudent(ctx context.Context, studentID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var exists int64
+		if err := tx.Raw("SELECT COUNT(*) FROM students WHERE id = ?", studentID).Scan(&exists).Error; err != nil {
+			return err
+		}
+		if exists == 0 {
+			return biz.ErrStudentNotFound
+		}
+		var guardianIDs []string
+		if err := tx.Raw("SELECT guardian_id FROM student_guardians WHERE student_id = ?", studentID).
+			Scan(&guardianIDs).Error; err != nil {
+			return err
+		}
+		del := []struct {
+			query string
+			args  []any
+		}{
+			{"DELETE FROM submissions WHERE assignment_id IN (SELECT id FROM task_assignments WHERE student_id = ?)", []any{studentID}},
+			{"DELETE FROM notifications WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM task_assignments WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM bookings WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM lesson_ledger WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM lesson_accounts WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM binding_codes WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM follow_ups WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM class_members WHERE student_id = ?", []any{studentID}},
+			{"DELETE FROM student_guardians WHERE student_id = ?", []any{studentID}},
+		}
+		for _, item := range del {
+			if err := tx.Exec(item.query, item.args...).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Exec("DELETE FROM students WHERE id = ?", studentID).Error; err != nil {
+			return err
+		}
+		// 绑定关系已删除：家长若能登录但已无在读学员，置为 disabled（未绑定可清理）。
+		for _, guardianID := range guardianIDs {
+			if err := tx.Exec(
+				`UPDATE guardians g SET g.status='disabled', g.updated_at=NOW(3)
+				  WHERE g.id = ? AND g.status = 'active'
+				    AND NOT EXISTS (
+				      SELECT 1 FROM student_guardians sg JOIN students s ON s.id = sg.student_id
+				       WHERE sg.guardian_id = g.id AND s.archived_at IS NULL AND s.status = 'active'
+				    )`, guardianID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // syncGuardianStatus 在学员状态变化后同步家长账号：没有在读学员的家长置为 disabled。
 func (r *crmRepo) syncGuardianStatus(ctx context.Context, studentID string) error {
 	var active int64

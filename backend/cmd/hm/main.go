@@ -71,6 +71,7 @@ func main() {
 	router.POST("/api/v1/students", authSrv.CreateStudent)
 	router.GET("/api/v1/students/{id}", authSrv.GetStudent)
 	router.PATCH("/api/v1/students/{id}", authSrv.UpdateStudent)
+	router.DELETE("/api/v1/students/{id}", authSrv.DeleteStudent)
 	router.GET("/api/v1/students/{id}/follow-ups", authSrv.ListFollowUps)
 	router.POST("/api/v1/students/{id}/follow-ups", authSrv.CreateFollowUp)
 	router.POST("/api/v1/students/{id}/binding-codes", authSrv.CreateBindingCode)
@@ -195,6 +196,14 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.
 		logger.Info("已创建初始负责人", "phone", cfg.BootstrapPhone)
 	} else if cfg.BootstrapPhone == "" {
 		logger.Warn("库中没有老师账号，且未配置 HM_BOOTSTRAP_PHONE/HM_BOOTSTRAP_PASSWORD；请配置后重启")
+	}
+	// 内部系统账号（用户名 system）：只在创建时或密码为空时从环境变量取初始密码。
+	if _, created, serr := uc.EnsureSystem(context.Background(), cfg.SystemPassword); serr != nil {
+		logger.Warn("系统账号维护失败，不影响业务", "error", serr)
+	} else if created {
+		logger.Info("已创建内部系统账号", "phone", biz.SystemPhone)
+	} else if cfg.SystemPassword == "" {
+		logger.Warn("未配置 HM_SYSTEM_PASSWORD，系统账号无法用环境变量初始化密码；若已设过密码则可忽略")
 	}
 	dashboard := biz.NewDashboardUsecase(data.NewDashboardRepo(db))
 	bind := biz.NewBindUsecase(data.NewGuardianRepo(db))

@@ -498,5 +498,22 @@
 
 **回滚**：`000009` 的 down 删除两列与索引；服务端回滚到旧版本后家长仍可按手机号登录（旧逻辑），但已设置的密码失效。
 
+## ADR-031 学员删除：物理删除 + 财务流水二次确认；内部系统账号用 `staff.hidden`
+
+**背景**：AGENTS §3.9 原本规定「不得物理删除学员」，退课只归档。但 2026-11-25 用户明确要求学员档案「也要能支持删除」，用于清理测试与垃圾数据（测试学员、误建档案），并且删除后要解除家长绑定，让家长账号可被删除或重新绑定新学员。同时用户要求一个「锁死的开发者账号」用于内部调试，用户名固定 `system`。
+
+**决定**：
+- 学员删除 `DELETE /api/v1/students/{id}` 仅 owner 可调用；前端**两次弹窗确认**。
+- 删除为物理删除：按外键依赖顺序清理 `submissions`、`notifications`、`task_assignments`、`bookings`、`lesson_ledger`、`lesson_accounts`、`binding_codes`、`follow_ups`、`class_members`、`student_guardians`，最后删 `students`；随后把相关家长置为未绑定（无在读学员则 `disabled`）。
+- **财务纪律保留**：若该学员存在 `lesson_ledger` 流水，接口返回 409 `STUDENT_HAS_LESSON_LEDGER`，必须显式带 `?force=1`（前端第三次确认）才连流水一起删除。默认路径不会静默丢账。
+- 系统账号：`staff` 增加 `hidden tinyint(1) NOT NULL DEFAULT 0`（`000010_system_account`）；启动时 `EnsureSystem` 保证 `phone='system'` 的账号存在、`hidden=1`、`role=owner`、`active`；密码只在首次创建或哈希为空时取 `HM_SYSTEM_PASSWORD` 写入，之后本人可在小程序自助改密；`ListStaff` 与服务台 `staff_total` 都过滤 `hidden`，成员管理对 `hidden` 账号返回 403 `SYSTEM_ACCOUNT_LOCKED`。
+
+**理由**：物理删除是用户对「清理垃圾」的明确诉求，且这些数据（测试学员）没有保留价值；但课时流水是钱账，误删无法复原，所以用 `force` 把「连流水一起删」变成一个显式、可审计的选择。系统账号用隐藏列而不是新角色，避免污染 `role ∈ {owner, assistant}` 的权限矩阵与前端角色分支。
+
+**影响**：删除不可撤销，任务/预约/作业历史随学员消失；`lesson_ledger.operator_id` 的历史仍指向老师，但被删学员的流水行不存在（force 情况下）。`000010` 只加一列，可安全回滚。
+
+**回滚**：`000010` 的 down 删除 `idx_staff_hidden` 与 `hidden` 列；服务端回滚后学员删除接口消失（前端入口需同步删除），系统账号变为普通 owner（不再隐藏）。
+
+
 
 

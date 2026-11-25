@@ -7,8 +7,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(all) != 9 {
-		t.Fatalf("want 9 migrations, got %d", len(all))
+	if len(all) != 10 {
+		t.Fatalf("want 10 migrations, got %d", len(all))
 	}
 	if all[0].version != 1 || all[0].name != "init" {
 		t.Fatalf("unexpected first migration: %+v", all[0])
@@ -30,6 +30,9 @@ func TestLoadMigrations(t *testing.T) {
 	}
 	if all[8].version != 9 || all[8].name != "guardian_passwords" {
 		t.Fatalf("unexpected ninth migration: %+v", all[8])
+	}
+	if all[9].version != 10 || all[9].name != "system_account" {
+		t.Fatalf("unexpected tenth migration: %+v", all[9])
 	}
 	for _, m := range all {
 		if len(m.up) == 0 || len(m.down) == 0 {

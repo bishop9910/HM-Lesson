@@ -52,8 +52,8 @@ const saving = ref(false);
 const followOpen = ref(false);
 const follow = ref({ method: "wechat", content: "", concern: "", next_action: "" });
 const code = ref("");
-const codeExpires = ref("");
-const editOpen = ref(false);
+const codeExpires = ref("");const editOpen = ref(false);
+const deleting = ref(false);
 const groupOptions = [
   { value: "class_active", label: "班课在读" },
   { value: "one_on_one", label: "一对一在读" },
@@ -222,6 +222,60 @@ function copyCode(): void {
 function goBack(): void {
   uni.navigateBack();
 }
+
+function confirmModal(title: string, content: string, confirmText: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    uni.showModal({
+      title,
+      content,
+      confirmText,
+      confirmColor: "#b91c1c",
+      success: (res) => resolve(Boolean(res.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+}
+
+// 删除学员档案：两次弹窗确认；若存在课时流水，接口返回 409，再弹一次确认后带 force=1 重试。
+async function deleteStudent(): Promise<void> {
+  const target = student.value;
+  if (!target) return;
+  const first = await confirmModal(
+    "删除学员档案",
+    `确认删除「${target.name}」？档案、作业、预约和绑定关系都会一起删除。`,
+    "继续",
+  );
+  if (!first) return;
+  const second = await confirmModal(
+    "再次确认",
+    "删除后无法恢复，该学员的家长会变成未绑定状态。",
+    "删除",
+  );
+  if (!second) return;
+  deleting.value = true;
+  try {
+    await request(`/api/v1/students/${target.id}`, "DELETE");
+    uni.showToast({ title: "已删除", icon: "success" });
+    setTimeout(() => uni.navigateBack(), 500);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409 && err.reason === "STUDENT_HAS_LESSON_LEDGER") {
+      const forced = await confirmModal("该学员有课时流水", `${err.message}`, "一并删除");
+      if (forced) {
+        try {
+          await request(`/api/v1/students/${target.id}?force=1`, "DELETE");
+          uni.showToast({ title: "已删除", icon: "success" });
+          setTimeout(() => uni.navigateBack(), 500);
+        } catch (forceErr) {
+          uni.showToast({ title: forceErr instanceof ApiError ? forceErr.message : "删除失败", icon: "none" });
+        }
+      }
+    } else {
+      uni.showToast({ title: err instanceof ApiError ? err.message : "删除失败", icon: "none" });
+    }
+  } finally {
+    deleting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -295,6 +349,12 @@ function goBack(): void {
           <text class="code-hint">有效期至 {{ codeExpires }}，点击复制。家长用手机号 + 此码登录。</text>
         </view>
         <view v-else class="hint">生成 6 位一次性绑定码，交给家长完成绑定。</view>
+      </view>
+
+      <view v-if="session.isOwner" class="section danger">
+        <text class="section-title">危险操作</text>
+        <text class="hint">删除学员档案会同时解除家长绑定，家长随后可被删除或重新绑定新学员。</text>
+        <button class="danger-btn" :loading="deleting" @click="deleteStudent">删除学员档案</button>
       </view>
 
       <button class="ghost" @click="goBack">返回</button>
@@ -624,5 +684,21 @@ function goBack(): void {
   font-size: 28rpx;
   background: $hm-primary-strong;
   color: #f7f3e8;
+}
+
+.danger {
+  border: 1rpx solid rgba(185, 28, 28, 0.28);
+  background: rgba(254, 242, 242, 0.6);
+}
+
+.danger-btn {
+  height: 84rpx;
+  margin-top: 20rpx;
+  line-height: 84rpx;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+  border: 1rpx solid rgba(185, 28, 28, 0.5);
+  background: transparent;
+  color: #b91c1c;
 }
 </style>

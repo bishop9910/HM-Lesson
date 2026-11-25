@@ -17,6 +17,7 @@ type staffRow struct {
 	PasswordHash string    `gorm:"column:password_hash"`
 	Role         string    `gorm:"column:role"`
 	Status       string    `gorm:"column:status"`
+	Hidden       bool      `gorm:"column:hidden"`
 	CreatedBy    *string   `gorm:"column:created_by"`
 	CreatedAt    time.Time `gorm:"column:created_at"`
 }
@@ -41,16 +42,16 @@ func (r *StaffRepo) Create(ctx context.Context, s *biz.Staff) error {
 		createdBy = s.CreatedBy
 	}
 	return r.db.WithContext(ctx).Exec(
-		`INSERT INTO staff (id, name, phone, password_hash, role, status, created_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.Phone, s.PasswordHash, s.Role, s.Status, createdBy,
+		`INSERT INTO staff (id, name, phone, password_hash, role, status, hidden, created_by)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.Phone, s.PasswordHash, s.Role, s.Status, s.Hidden, createdBy,
 	).Error
 }
 
 func (r *StaffRepo) Update(ctx context.Context, s *biz.Staff) error {
 	return r.db.WithContext(ctx).Exec(
-		`UPDATE staff SET name = ?, role = ?, status = ?, password_hash = ? WHERE id = ? AND deleted_at IS NULL`,
-		s.Name, s.Role, s.Status, s.PasswordHash, s.ID,
+		`UPDATE staff SET name = ?, role = ?, status = ?, hidden = ?, password_hash = ? WHERE id = ? AND deleted_at IS NULL`,
+		s.Name, s.Role, s.Status, s.Hidden, s.PasswordHash, s.ID,
 	).Error
 }
 
@@ -124,5 +125,6 @@ func toStaff(row staffRow) *biz.Staff {
 		Role:         row.Role,
 		Status:       row.Status,
 		CreatedBy:    createdBy,
+		Hidden:       row.Hidden,
 	}
 }

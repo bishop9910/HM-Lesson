@@ -211,6 +211,10 @@ func mapBizError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusForbidden, "WRONG_PASSWORD", "旧密码不正确")
 	case errors.Is(err, biz.ErrWeakPassword):
 		return fail(ctx, http.StatusBadRequest, "WEAK_PASSWORD", "密码至少 8 位")
+	case errors.Is(err, biz.ErrSystemLocked):
+		return fail(ctx, http.StatusForbidden, "SYSTEM_ACCOUNT_LOCKED", "系统账号不可在成员管理里修改")
+	case errors.Is(err, biz.ErrReservedAccount):
+		return fail(ctx, http.StatusBadRequest, "RESERVED_ACCOUNT", "该用户名保留给系统账号")
 	default:
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "操作失败")
 	}

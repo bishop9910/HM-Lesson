@@ -99,6 +99,7 @@ erDiagram
 | password_hash | text | NOT NULL | Argon2id |
 | role | text | NOT NULL DEFAULT 'owner', CHECK IN ('owner','assistant') | 一期只创建 owner；结构支持多老师（Q5） |
 | status | text | NOT NULL DEFAULT 'active', CHECK IN ('active','disabled') | |
+| hidden | tinyint(1) | NOT NULL DEFAULT 0 | 1=内部系统账号：不出现在成员管理与统计，成员管理不可修改（见 `000010_system_account`） |
 | last_login_at | timestamptz | NULL | |
 | created_by | uuid | FK staff(id) NULL | 成员由 owner 创建 |
 | created_at / updated_at | timestamptz | NOT NULL DEFAULT now() | |
@@ -152,6 +153,8 @@ erDiagram
 索引：`idx_students_group_status`、`idx_students_next_follow_up`（部分索引 `WHERE status IN ('active','paused')`）、`idx_students_name`。
 
 > 蓝本把家长姓名/手机号放在学员表；这里拆出 `guardians`，同一家长多孩只维护一份联系方式。
+>
+> **删除学员（2026-11-25）**：`DELETE /api/v1/students/{id}`（仅 owner，前端两次确认）为物理删除，按外键顺序清理 `submissions` → `notifications` → `task_assignments` → `bookings` → `lesson_ledger` → `lesson_accounts` → `binding_codes` → `follow_ups` → `class_members` → `student_guardians` → `students`；随后把相关家长置为「未绑定」（若已无在读学员则 `status='disabled'`），家长可在「家长账号」里被删除或重新绑定。存在课时流水时必须 `?force=1` 才会删除流水（409 `STUDENT_HAS_LESSON_LEDGER`）。
 
 #### `student_guardians` 学员-家长关系
 

@@ -48,6 +48,10 @@ type Config struct {
 
 	// LessonHoursPerSession 是一次一对一课默认扣减的课时数（需求 §3.3.2，默认 1）。
 	LessonHoursPerSession float64
+
+	// SystemPassword 是内部系统账号（用户名固定 system）的初始密码。
+	// 只在账号首次创建或密码为空时写入，之后本人可在小程序里自助改密。
+	SystemPassword string
 }
 
 // SubscribeTemplate 是一个订阅消息模板的配置：模板 ID + 微信模板关键词到内容字段的映射。
@@ -115,6 +119,8 @@ func Load() Config {
 		BootstrapPassword: env("HM_BOOTSTRAP_PASSWORD", ""),
 
 		LessonHoursPerSession: envFloat("HM_LESSON_HOURS_PER_SESSION", 1),
+
+		SystemPassword: env("HM_SYSTEM_PASSWORD", ""),
 	}
 }
 
