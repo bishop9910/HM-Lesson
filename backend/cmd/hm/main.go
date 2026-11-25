@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -233,10 +235,31 @@ func probeWXToken(client *wx.Client, appID string, logger *slog.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := client.AccessToken(ctx); err != nil {
-		logger.Warn("微信 access_token 获取失败，订阅消息将无法发送", "app_id", appID, "error", err)
+		logger.Warn("微信 access_token 获取失败，订阅消息将无法发送",
+			"app_id", appID, "error", err.Error(), "hint", wxFailureHint(err))
 		return
 	}
 	logger.Info("微信 access_token 获取成功，订阅消息可发送", "app_id", appID)
+}
+
+// wxFailureHint 给运维一句可执行的方向，区分“密钥不对”和“网络出不去”。
+func wxFailureHint(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return "容器连不上 api.weixin.qq.com：确认云托管已开启公网出口（出站），或检查 DNS/代理"
+	}
+	var apiErr *wx.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case 40013:
+			return "AppID 不正确（HM_WX_APP_ID）"
+		case 40125, 40001:
+			return "AppSecret 不正确（HM_WX_APP_SECRET）；若填的是占位文案需换成微信后台真实密钥"
+		case 40164:
+			return "调用 IP 不在白名单：微信后台 → 开发管理 → 开发设置 → IP 白名单"
+		}
+	}
+	return "查看上面的 error 与微信错误码说明"
 }
 
 // wxSubscribeSender 把 pkg/wx 适配成 biz.SubscribeSender；retryable=false 表示重试无意义。

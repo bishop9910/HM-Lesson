@@ -73,7 +73,8 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte) error {
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("发送订阅消息: %w", err)
+		// 网络类错误会把完整 URL（含 access_token）带进文本，必须脱敏后再返回。
+		return fmt.Errorf("发送订阅消息: %s", redact(err.Error(), token))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

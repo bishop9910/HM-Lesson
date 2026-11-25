@@ -49,6 +49,20 @@ func IsPermanent(err error) bool {
 	}
 }
 
+// redact 把敏感串（app secret、access_token）从错误文本里抹掉。
+//
+// net/http 的网络错误会把完整请求 URL 拼进 err.Error()，
+// 而微信接口的 secret 与 access_token 只能放在 query 里，所以必须在返回前替换。
+func redact(text string, secrets ...string) string {
+	for _, s := range secrets {
+		if s == "" {
+			continue
+		}
+		text = strings.ReplaceAll(text, s, "***")
+	}
+	return text
+}
+
 // Client 是微信服务端接口客户端。
 type Client struct {
 	appID      string
@@ -121,7 +135,8 @@ func (c *Client) fetchToken(ctx context.Context) (string, time.Duration, error) 
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("请求 access_token: %w", err)
+		// 网络类错误会把完整 URL（含 secret）带进文本，必须脱敏后再返回，否则会写进日志。
+		return "", 0, fmt.Errorf("请求 access_token: %s", redact(err.Error(), c.appSecret))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

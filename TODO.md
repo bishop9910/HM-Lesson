@@ -29,9 +29,12 @@
   - [x] 作业发布通知：`qV_nVYIcFpaTP71yWyu-6Ln1haEHfb5UEk93UkPKebQ`（已配进 `HM_WX_SUBSCRIBE_TEMPLATES`）
   - [ ] 作业批阅完成通知：用户自建模板（作业名称 + 批改分数），**等审核**
   - [ ] 作业被打回通知：建议新建（作业名称 + 学员姓名 + 打回原因），**等审核**
-- [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET`（2026-11-25 用户已在云端配好）
+- [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET` 已在云端配置（2026-11-25），但**仍有两个阻断**（见下）
   - AppSecret 只放云托管环境变量，**禁止入库/写文档**
-  - 启动时 `probeWXToken` 会异步换一次 access_token：日志出现「微信 access_token 获取成功」即证明 AppID/AppSecret 可用；出现「获取失败」按 `wx.APIError` 的 code 排查（40013 invalid appid / 40125 invalid appsecret / 40164 IP 白名单）
+- [ ] **阻断 1：`HM_WX_APP_SECRET` 的值是占位文案**。`hm-lesson-026` 启动日志里请求 URL 显示 `secret=填写的密钥`，需换成微信后台「开发管理 → 开发设置 → AppSecret」的真实值再发布。
+- [ ] **阻断 2：云托管容器连不上微信接口**。同一日志：`dial tcp 169.254.10.1:443: connect: connection refused`（`api.weixin.qq.com` 被解析到内网地址后拒绝），即容器**没有公网出口**。需要在云托管控制台为该服务开通公网访问/出口（出站），开通后启动日志应变为「微信 access_token 获取成功」。
+  - 代码侧已做的配合：`pkg/wx` 的错误文本已脱敏（secret/access_token 替换为 `***`），`probeWXToken` 失败时输出 `hint` 区分“密钥不对”与“网络出不去”。
+- [x] 启动日志可自检：`微信 access_token 获取成功，订阅消息可发送` = 配置与网络都通；`获取失败` 带 `hint`（网络出口 / 40013 AppID / 40125 AppSecret / 40164 IP 白名单）。
 - [ ] 确认工具类目下这些模板可选（个人主体 + 未认证，模板库可能受限）
 - [x] 确认家长端是否已有 `openid`（`guardians.openid` 列已存在；登录时从 `X-WX-OPENID` 采集，需 `X-WX-SOURCE` 非空）
 
