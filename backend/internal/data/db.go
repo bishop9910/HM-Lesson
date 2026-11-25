@@ -17,7 +17,7 @@ func Open(dsn string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("HM_DB_DSN 未配置")
 	}
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(withUTCSession(dsn)), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
@@ -31,6 +31,22 @@ func Open(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 	return db, nil
+}
+
+// withUTCSession 强制每条连接的会话时区为 UTC。
+// 云托管 MySQL 的系统时区是 +08:00，若不管，NOW(3)/CURRENT_TIMESTAMP 写进 datetime 的是
+// 本地墙上时间，而 Go 侧写入的是 UTC，两者混在一列里会差 8 小时（2026-11-25 线上发现：
+// bookings.reviewed_at 比 ledger.occurred_at 快 8 小时）。time_zone 是 MySQL 系统变量，
+// go-sql-driver 会在握手时执行 SET time_zone='+00:00'。
+func withUTCSession(dsn string) string {
+	if strings.Contains(dsn, "time_zone=") {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "time_zone=%27%2B00%3A00%27"
 }
 
 const migrationLock = "hm_migrate"

@@ -229,6 +229,9 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 13. **MySQL 5.7**
     没有部分唯一索引、没有 RETURNING/ON CONFLICT/JSONB；`CHECK` 会被解析但忽略，业务层必须校验。字符集 `utf8mb4_unicode_ci`。
 
+14. **MySQL 会话时区必须钉成 UTC（2026-11-25 线上发现）**
+    云托管 MySQL 的 `time_zone` 是 `+08:00`，`NOW(3)` / `CURRENT_TIMESTAMP` 写进 `datetime` 的是**本地墙上时间**，而 Go 侧写入的是 UTC → 同一列里差 8 小时（实测 `bookings.reviewed_at` 比 `lesson_ledger.occurred_at` 快 8 小时）。`data.Open` 现在会通过 `withUTCSession` 给 DSN 追加 `time_zone='+00:00'`（go-sql-driver 在握手时执行 `SET time_zone`），已显式配过就不覆盖。**自己拼 `HM_DB_DSN` 时要手动带上这个参数**，否则时间又会混。
+
 ---
 
 ## 6. 最近完成（不要重复做）
