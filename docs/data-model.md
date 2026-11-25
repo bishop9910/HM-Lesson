@@ -113,6 +113,8 @@ erDiagram
 | wx_openid | varchar(64) | UNIQUE NULL | 小程序 openid |
 | wx_unionid | varchar(64) | NULL | 预留 |
 | status | text | NOT NULL DEFAULT 'pending', CHECK IN ('pending','active','rejected','disabled') | 待审批/正常/拒绝/禁用 |
+| password_hash | varchar(255) | NOT NULL DEFAULT '' | Argon2id；空串=还没设密码（见 `000009_guardian_passwords`） |
+| last_login_at | datetime(3) | NULL | 最近一次密码登录时间 |
 | approved_by | uuid | FK staff(id) NULL | |
 | approved_at | timestamptz | NULL | |
 | rejected_reason | text | NULL | 拒绝绑定时必填 |
@@ -120,7 +122,15 @@ erDiagram
 | remark | text | NULL | |
 | created_at / updated_at | timestamptz | NOT NULL DEFAULT now() | |
 
-索引：`uq_guardians_phone`、`uq_guardians_wx_openid`。
+索引：`uq_guardians_phone`、`uq_guardians_wx_openid`、`idx_guardians_status_created(status, created_at)`（家长账号管理页按状态+时间清理）。
+
+> **实现现状（MySQL 5.7，`000009_guardian_passwords`）**
+>
+> - 家长不再只靠手机号进入门户：审批通过时 owner 必须给一个初始密码（留空则由服务端生成一次性 8 位密码，只在审批响应里返回一次），家长可自助改密。
+> - 首次用绑定码登录时若账号还没有密码，会要求同一次请求里设置密码（`PASSWORD_REQUIRED`）。
+> - 家长密码规则 6~32 字符；老师（staff）密码保持 8 位起；两者都用 Argon2id，只存哈希。
+> - **账号与学员同步**：学员状态改为非 `active`（结课/流失）后，若家长已没有任何在读学员，账号自动置为 `disabled`，出现在 owner 的「可清理」列表；owner 可物理删除无在读学员的家长账号（连带清理通知、订阅额度、学员关联），仍绑定在读学员时返回 409 `GUARDIAN_HAS_STUDENTS`。
+
 
 #### `students` 学员
 

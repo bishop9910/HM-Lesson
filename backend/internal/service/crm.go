@@ -83,6 +83,39 @@ func toPortalStudentDTO(s biz.Student) portalStudentDTO {
 	}
 }
 
+// guardianAccountDTO 是教师端家长账号列表的一行；一个家长可能对应多个学员。
+type guardianAccountDTO struct {
+	ID           string   `json:"id"`
+	Phone        string   `json:"phone"`
+	Name         string   `json:"name"`
+	Status       string   `json:"status"`
+	HasPassword  bool     `json:"has_password"`
+	LastLoginAt  string   `json:"last_login_at,omitempty"`
+	CreatedAt    string   `json:"created_at"`
+	StudentIDs   []string `json:"student_ids"`
+	StudentNames []string `json:"student_names"`
+	// StudentCount 是仍绑定的在读学员数；为 0 且状态不是 pending 时前端提示“可清理”。
+	StudentCount int `json:"student_count"`
+}
+
+func toGuardianAccountDTO(g *biz.GuardianAccount) guardianAccountDTO {
+	d := guardianAccountDTO{
+		ID: g.ID, Phone: g.Phone, Name: g.Name, Status: g.Status,
+		HasPassword: g.HasPassword, CreatedAt: g.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		StudentIDs: g.StudentIDs, StudentNames: g.StudentNames, StudentCount: g.StudentCount(),
+	}
+	if g.LastLoginAt != nil {
+		d.LastLoginAt = g.LastLoginAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if d.StudentIDs == nil {
+		d.StudentIDs = []string{}
+	}
+	if d.StudentNames == nil {
+		d.StudentNames = []string{}
+	}
+	return d
+}
+
 type followUpDTO struct {
 	ID           string  `json:"id"`
 	Method       string  `json:"method"`
@@ -286,6 +319,8 @@ func (s *Server) PendingGuardians(ctx khttp.Context) error {
 
 type approveGuardianRequest struct {
 	StudentID string `json:"student_id"`
+	// Password 是家长初始密码；留空时服务端生成一次性密码并只在本次响应里返回。
+	Password string `json:"password"`
 }
 
 func (s *Server) ApproveGuardian(ctx khttp.Context) error {
@@ -297,10 +332,94 @@ func (s *Server) ApproveGuardian(ctx khttp.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "请求格式错误")
 	}
-	if err := s.crm.ApproveGuardian(ctx, actor, ctx.Vars().Get("id"), req.StudentID); err != nil {
+	password := strings.TrimSpace(req.Password)
+	generated := false
+	if password == "" {
+		password = biz.NewTemporaryPassword()
+		generated = true
+	}
+	if err := s.crm.ApproveGuardian(ctx, actor, ctx.Vars().Get("id"), req.StudentID, password); err != nil {
 		return mapCRMBizError(ctx, err)
 	}
-	return ctx.JSON(http.StatusOK, map[string]any{"status": "active"})
+	out := map[string]any{"status": "active"}
+	if generated {
+		out["initial_password"] = password
+	}
+	return ctx.JSON(http.StatusOK, out)
+}
+
+// ListGuardians 家长账号总览：owner 用它清理长期未绑定/无在读学员的账号。
+func (s *Server) ListGuardians(ctx khttp.Context) error {
+	if _, err := s.requireStaff(ctx, true); err != nil {
+		return err
+	}
+	accounts, err := s.crm.Guardians(ctx, ctx.Query().Get("status"))
+	if err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	out := make([]guardianAccountDTO, 0, len(accounts))
+	for i := range accounts {
+		out = append(out, toGuardianAccountDTO(&accounts[i]))
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"items": out})
+}
+
+type deleteGuardianRequest struct {
+	// Confirm 仅用于前端二次确认，服务端不强制。
+	Confirm bool `json:"confirm"`
+}
+
+// DeleteGuardian 删除家长账号；仍绑定在读学员时 409，提示先归档学员。
+func (s *Server) DeleteGuardian(ctx khttp.Context) error {
+	actor, err := s.requireStaff(ctx, true)
+	if err != nil {
+		return err
+	}
+	if err := s.crm.DeleteGuardian(ctx, actor, ctx.Vars().Get("id")); err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+type setGuardianPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// ResetGuardianPassword 由 owner 重置家长密码（家长忘记密码）。
+func (s *Server) ResetGuardianPassword(ctx khttp.Context) error {
+	actor, err := s.requireStaff(ctx, true)
+	if err != nil {
+		return err
+	}
+	var req setGuardianPasswordRequest
+	if err := ctx.Bind(&req); err != nil {
+		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "请求格式错误")
+	}
+	if err := s.crm.ResetGuardianPassword(ctx, actor, ctx.Vars().Get("id"), req.Password); err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+// ChangeGuardianPassword 家长自助改密；首次设置（未设过密码）允许不带旧密码。
+func (s *Server) ChangeGuardianPassword(ctx khttp.Context) error {
+	guardianID, err := s.requireGuardian(ctx)
+	if err != nil {
+		return err
+	}
+	var req changeGuardianPasswordRequest
+	if err := ctx.Bind(&req); err != nil {
+		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "请求格式错误")
+	}
+	if err := s.crm.ChangeGuardianPassword(ctx, guardianID, req.OldPassword, req.NewPassword); err != nil {
+		return mapCRMBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+type changeGuardianPasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
 }
 
 type rejectGuardianRequest struct {
@@ -337,11 +456,12 @@ func (s *Server) CreateBindingCode(ctx khttp.Context) error {
 }
 
 type guardianLoginRequest struct {
-	Phone string `json:"phone"`
-	Code  string `json:"code"`
+	Phone    string `json:"phone"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
 }
 
-// GuardianLogin 家长登录：已审批的家长可用手机号；新家长用手机号 + 6 位绑定码直接绑定。
+// GuardianLogin 家长登录：手机号 + 密码；新家长用手机号 + 6 位绑定码首次登录并设置密码。
 func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	if s.crm == nil || s.tokens == nil {
 		return fail(ctx, http.StatusServiceUnavailable, "AUTH_DISABLED", "数据库未配置")
@@ -355,6 +475,16 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	var err error
 	if strings.TrimSpace(req.Code) != "" {
 		guardian, students, err = s.crm.GuardianLoginByCode(ctx, req.Phone, req.Code)
+		if err == nil && !guardian.HasPassword() {
+			// 首次通过绑定码进入必须先设密码，否则下次又只能靠绑定码。
+			if strings.TrimSpace(req.Password) == "" {
+				return fail(ctx, http.StatusBadRequest, "PASSWORD_REQUIRED", "首次登录请设置密码（6~32 位）")
+			}
+			if perr := s.crm.SetInitialGuardianPassword(ctx, guardian.ID, req.Password); perr != nil {
+				return mapCRMBizError(ctx, perr)
+			}
+			guardian.PasswordHash = "set"
+		}
 	} else {
 		guardian, err = s.crm.GuardianByPhone(ctx, req.Phone)
 		if err == nil && guardian.Status == "pending" {
@@ -365,6 +495,17 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 		}
 		if err == nil && guardian.Status != "active" {
 			return fail(ctx, http.StatusForbidden, "GUARDIAN_DISABLED", "账号不可用")
+		}
+		if err == nil {
+			if strings.TrimSpace(req.Password) == "" {
+				return fail(ctx, http.StatusBadRequest, "PASSWORD_REQUIRED", "请输入密码")
+			}
+			if verr := s.crm.VerifyGuardianPassword(ctx, guardian, req.Password); verr != nil {
+				if errors.Is(verr, biz.ErrPasswordNotSet) {
+					return fail(ctx, http.StatusBadRequest, "PASSWORD_REQUIRED", "该账号还没有密码，请用绑定码登录并设置密码")
+				}
+				return fail(ctx, http.StatusUnauthorized, "INVALID_CREDENTIALS", "手机号或密码错误")
+			}
 		}
 	}
 	if err != nil {
@@ -394,7 +535,10 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	}
 	return ctx.JSON(http.StatusOK, map[string]any{
 		"token": tok, "expires_at": exp.UTC().Format("2006-01-02T15:04:05Z"),
-		"guardian": map[string]any{"id": guardian.ID, "phone": guardian.Phone, "status": guardian.Status},
+		"guardian": map[string]any{
+			"id": guardian.ID, "phone": guardian.Phone, "status": guardian.Status,
+			"has_password": guardian.HasPassword(),
+		},
 		"students": out,
 	})
 }
@@ -532,6 +676,14 @@ func mapCRMBizError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusForbidden, "GUARDIAN_DISABLED", "账号不可用")
 	case errors.Is(err, biz.ErrForbidden):
 		return fail(ctx, http.StatusForbidden, "FORBIDDEN", "没有权限")
+	case errors.Is(err, biz.ErrWrongPassword):
+		return fail(ctx, http.StatusForbidden, "WRONG_PASSWORD", "旧密码不正确")
+	case errors.Is(err, biz.ErrPasswordNotSet):
+		return fail(ctx, http.StatusBadRequest, "PASSWORD_REQUIRED", "该账号还没有密码，请先在门户设置密码")
+	case errors.Is(err, biz.ErrWeakPassword):
+		return fail(ctx, http.StatusBadRequest, "WEAK_PASSWORD", "密码长度需要 6~32 位")
+	case errors.Is(err, biz.ErrGuardianHasStudents):
+		return fail(ctx, http.StatusConflict, "GUARDIAN_HAS_STUDENTS", "该家长仍绑定在读学员，请先归档学员")
 	default:
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "操作失败")
 	}

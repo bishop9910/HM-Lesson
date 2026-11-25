@@ -318,6 +318,8 @@ backend/
    - **未命中且无码**：提示“请联系老师建档”，**不自动创建学员/家长**。
 6. 老师审批通过 → `active`，家长可拉取数据；驳回 → `rejected` 并记录原因。
 7. 更换微信：老师端“重置绑定”清除 `wx_openid`，家长重新走 2~6。
+8. **凭据与账号生命周期（2026-11-25 落地，ADR-030）**：家长登录 = 手机号 + **密码**（Argon2id，6~32 位）；若用绑定码首次绑定，同一次请求里必须设置密码（缺密码返回 `PASSWORD_REQUIRED`）。审批通过时由 owner 设初始密码，留空则服务端生成一次性 8 位密码（只在响应里返回一次）。家长可自助改密；忘记密码由 owner 重置。老师（owner/assistant）可自助改密（8~64 位，需旧密码）。
+9. **家长账号清理**：学员状态改为非 `active` 后，家长若已无在读学员则自动 `disabled`；owner 可删除无在读学员的家长账号（`GUARDIAN_HAS_STUDENTS` 保护），删除连带清理站内通知、订阅额度与学员关联，历史课时/任务流水保留（操作人是老师）。
 
 **绑定码**：6 位数字，7 天有效，一次性；`POST /api/v1/students/{id}/binding-codes` 生成（owner），绑定成功后 `used_at` 落库；限流 5 次/小时/家长，失败 10 次锁定 1 小时。
 
@@ -485,7 +487,7 @@ backend/
 | POST | `/api/v1/auth/bind-request` | - | 家长绑定申请落库（手机号，待老师审批；M1 已实现） |
 | GET | `/api/v1/dashboard/summary` | S | 首页/工作台真实汇总（M1 已实现） |
 
-> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`POST /api/v1/guardians/{id}/approve|reject`、`POST /api/v1/auth/guardian/login`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET/DELETE /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`、`GET /api/v1/portal/notifications`、`POST /api/v1/portal/notifications/{id}/read|read-all`。表中其余接口为规划，尚未实现，前端不得假设可用。
+> 当前代码已实现：`POST /api/v1/auth/staff/login`（兼容 `/auth/login`）、`POST /api/v1/auth/password`（老师自助改密）、`GET /api/v1/auth/me`、`GET/POST /api/v1/staff`、`PATCH /api/v1/staff/{id}`、`POST /api/v1/auth/bind-request`、`GET /api/v1/dashboard/summary`；M2 已实现 `GET/POST /api/v1/students`、`GET/PATCH /api/v1/students/{id}`、`GET/POST /api/v1/students/{id}/follow-ups`、`POST /api/v1/students/{id}/binding-codes`、`GET /api/v1/guardians/pending`、`GET /api/v1/guardians`、`POST /api/v1/guardians/{id}/approve|reject|password`、`DELETE /api/v1/guardians/{id}`、`POST /api/v1/auth/guardian/login`（手机号+密码，首次可用绑定码并设密）、`POST /api/v1/auth/guardian/password`、`GET /api/v1/portal/home`、`GET /api/v1/portal/students/{id}`；M3 已实现 `GET/POST /api/v1/tasks`、`GET/DELETE /api/v1/tasks/{id}`、`POST /api/v1/tasks/{id}/publish|close`、`GET /api/v1/reviews`、`POST /api/v1/assignments/{id}/review`、`GET/POST /api/v1/task-templates`、`PATCH/DELETE /api/v1/task-templates/{id}`、`GET /api/v1/portal/tasks`、`GET /api/v1/portal/tasks/{id}`、`POST /api/v1/portal/tasks/{id}/submit`、`GET /api/v1/portal/archive`、`GET /api/v1/portal/notifications`、`POST /api/v1/portal/notifications/{id}/read|read-all`。表中其余接口为规划，尚未实现，前端不得假设可用。
 
 #### 学员 / 家长 / 标签 / 跟进（S）
 
@@ -497,9 +499,13 @@ backend/
 | GET | `/api/v1/students/{id}/timeline` | 聚合时间线 |
 | GET/POST | `/api/v1/students/{id}/follow-ups` | 跟进记录 |
 | PUT | `/api/v1/students/{id}/tags` | 覆盖标签 |
-| GET | `/api/v1/guardians` | 家长列表（含绑定状态） |
-| POST | `/api/v1/guardians/{id}/approve` | 审批绑定 |
+| GET/POST | `/api/v1/guardians` | 家长账号列表（含学员、是否设密、最近登录）/（`POST` 未实现，绑定走申请+审批） |
+| POST | `/api/v1/guardians/{id}/approve` | 审批绑定（可带 `password` 设初始密码，留空返回一次性 `initial_password`） |
 | POST | `/api/v1/guardians/{id}/reject` | 拒绝绑定 |
+| POST | `/api/v1/guardians/{id}/password` | owner 重置家长密码（6~32 位） |
+| DELETE | `/api/v1/guardians/{id}` | 删除家长账号（无在读学员才可；连带清理通知/订阅额度/关联） |
+| POST | `/api/v1/auth/password` | 老师自助改密（owner/assistant；8~64 位，需旧密码） |
+| POST | `/api/v1/auth/guardian/password` | 家长自助改密（6~32 位；首次设置可不带旧密码） |
 | POST | `/api/v1/guardians/{id}/reset-binding` | 重置微信绑定 |
 | POST | `/api/v1/students/{id}/binding-codes` | 生成 6 位绑定码（7 天、一次性） |
 | GET/POST | `/api/v1/tags` | 标签维护 |

@@ -44,6 +44,10 @@
     {
       "path": "pages/portal/booking",
       "style": { "navigationBarTitleText": "预约上课" }
+    },
+    {
+      "path": "pages/portal/password",
+      "style": { "navigationBarTitleText": "修改密码" }
     }
   ],
   "subPackages": [
@@ -101,6 +105,10 @@
         {
           "path": "pages/lessons/index",
           "style": { "navigationBarTitleText": "课时台账" }
+        },
+        {
+          "path": "pages/password/index",
+          "style": { "navigationBarTitleText": "修改密码" }
         }
       ]
     }

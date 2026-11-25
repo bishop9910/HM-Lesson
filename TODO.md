@@ -1,7 +1,7 @@
 # HM-Lesson 待办与路线图
 
-> 最后更新：2026-11-25 14:25
-> 当前代码基线：`main` @ `8cc6f4b`；本轮新增 `TODO.md`、`HANDOVER.md`、微信订阅消息（迁移 `000006` + `pkg/wx` + 投递 worker + 家长端开关）、M4 预约与课时（迁移 `000007` + biz/data/service + 4 个页面）与 README 索引，尚未提交
+> 最后更新：2026-11-25 17:35
+> 当前代码基线：`main` @ `8cc6f4b`；本轮新增 `TODO.md`、`HANDOVER.md`、微信订阅消息（迁移 `000006` + `pkg/wx` + 投递 worker + 家长端开关）、M4 预约与课时（迁移 `000007` + biz/data/service + 4 个页面）、家长账号体系（迁移 `000009` + 密码登录/审批设密/自助改密/账号清理 + 4 个页面）与 README 索引，尚未提交
 > 生产服务：微信云托管 `hm-lesson`，环境 `prod-d8gq8vzftc39caa5b`，MySQL 5.7.18 + COS
 > 规则：完成一项就勾选；不要在生产库造测试数据；代码/部署/权限约定见 [`AGENTS.md`](AGENTS.md)。
 
@@ -90,6 +90,20 @@
 ---
 
 ## P1：业务功能（按顺序）
+
+### M2 家长账号体系（2026-11-25 新增，已完成待部署验证）
+
+> 背景：此前家长只要知道手机号就能登录，等于没有凭据；测试里还出现「申请后直接 active 但没有学员关联」的脏账号，审批页看不到、也没人能清理。现改为手机号 + 密码登录，并由 owner 管理账号生命周期（ADR-030）。
+
+- [x] 家长密码：`guardians.password_hash`（Argon2id，6~32 位）+ `last_login_at`；迁移 `000009_guardian_passwords`
+- [x] 家长登录：`{phone,password}`；首次用 `{phone,code,password}` 走绑定码并当场设密；无密码返回 `PASSWORD_REQUIRED`
+- [x] 审批设初始密码：`POST /api/v1/guardians/{id}/approve {student_id,password}`，留空则由服务端生成一次性 8 位并只在响应返回
+- [x] 自助改密：家长 `POST /api/v1/auth/guardian/password`（6~32，首次可免旧密码）；老师 `POST /api/v1/auth/password`（8~64，需旧密码）
+- [x] 账号总览与清理：`GET /api/v1/guardians`（学员名、是否设密、上次登录、可清理标记）、owner 重置密码、`DELETE /api/v1/guardians/{id}`（有在读学员返回 409；连带清通知/订阅额度/关联，课时流水保留）
+- [x] 与学员同步：学员状态改为非 `active` 且家长无在读学员 → 家长自动 `disabled`
+- [x] 前端：家长登录页改造、`pages/portal/password`、`pkg-teacher/pages/password`、`pkg-teacher/pages/guardians` 双标签页（待审批/全部账号 + 筛选 + 重置 + 删除）
+- [ ] 部署后删掉测试期遗留的家长 `13000000000` 及其绑定申请（需 owner 在「家长账号 → 全部账号」里删；或先归档其学员）
+- [ ] 真机验证：密码登录、绑定码首次设密、初始密码转告、删除保护（409）
 
 ### M4 一对一预约 / 课时 / 班课
 

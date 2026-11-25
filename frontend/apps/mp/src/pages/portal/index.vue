@@ -213,6 +213,10 @@ function goArchive(): void {
 function goBooking(): void {
   uni.navigateTo({ url: "/pages/portal/booking" });
 }
+
+function goPassword(): void {
+  uni.navigateTo({ url: "/pages/portal/password" });
+}
 </script>
 
 <template>
@@ -223,6 +227,11 @@ function goBooking(): void {
         <text class="phone">{{ phone }}</text>
       </view>
       <text class="link" @click="logout">退出</text>
+    </view>
+
+    <view class="account">
+      <text class="account-text">账号 {{ phone }}</text>
+      <text class="account-link" @click="goPassword">修改密码</text>
     </view>
 
     <view v-if="errorText" class="error">{{ errorText }}</view>
@@ -324,6 +333,27 @@ function goBooking(): void {
 
 .quick button {
   flex: 1;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+  padding: 16rpx 24rpx;
+  border-radius: $hm-radius;
+  background: $hm-surface;
+  border: 1rpx solid $hm-border;
+}
+
+.account-text {
+  font-size: 24rpx;
+  color: $hm-muted;
+}
+
+.account-link {
+  font-size: 24rpx;
+  color: $hm-primary-strong;
 }
 
 .stats {

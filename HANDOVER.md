@@ -130,9 +130,14 @@ GET/PATCH /api/v1/students/{id}
 GET/POST /api/v1/students/{id}/follow-ups
 POST /api/v1/students/{id}/binding-codes
 GET  /api/v1/guardians/pending
-POST /api/v1/guardians/{id}/approve
+GET  /api/v1/guardians                 # 家长账号总览（owner；含学员名、has_password、last_login_at、student_count）
+POST /api/v1/guardians/{id}/approve    # 可带 {student_id, password}；留空返回 initial_password
 POST /api/v1/guardians/{id}/reject
-POST /api/v1/auth/guardian/login
+POST /api/v1/guardians/{id}/password   # owner 重置家长密码
+DELETE /api/v1/guardians/{id}          # 仅无在读学员；409 GUARDIAN_HAS_STUDENTS
+POST /api/v1/auth/guardian/login       # {phone,password} 或 {phone,code,password}
+POST /api/v1/auth/guardian/password    # 家长自助改密
+POST /api/v1/auth/password             # 老师自助改密（owner/assistant）
 
 GET  /api/v1/dashboard/summary
 POST /api/v1/auth/bind-request
@@ -221,7 +226,7 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
     改环境变量生成的是“配置版本”，复用旧镜像。代码改动必须让云托管从新 commit 构建；构建后确认镜像 tag 变化。
 
 11. **迁移**
-    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 8 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
+    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 9 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
 
 12. **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移（2026-11-25 线上事故）**
     `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。
@@ -231,6 +236,13 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 
 14. **MySQL 会话时区必须钉成 UTC（2026-11-25 线上发现）**
     云托管 MySQL 的 `time_zone` 是 `+08:00`，`NOW(3)` / `CURRENT_TIMESTAMP` 写进 `datetime` 的是**本地墙上时间**，而 Go 侧写入的是 UTC → 同一列里差 8 小时（实测 `bookings.reviewed_at` 比 `lesson_ledger.occurred_at` 快 8 小时）。`data.Open` 现在会通过 `withUTCSession` 给 DSN 追加 `time_zone='+00:00'`（go-sql-driver 在握手时执行 `SET time_zone`），已显式配过就不覆盖。**自己拼 `HM_DB_DSN` 时要手动带上这个参数**，否则时间又会混。
+
+15. **家长登录已要密码，旧账号必须先设密（2026-11-25，ADR-030）**
+    `guardians.password_hash` 默认空串表示“还没设密码”。这类账号**不能**密码登录（返回 `PASSWORD_REQUIRED`），必须先用绑定码登录并当场设密，或由 owner 在「家长账号 → 重置密码」补设。审批通过时一定要把 `initial_password` 转告家长（只返回一次）。
+    删除家长账号是**物理删除**，会连同 `notifications`/`notification_deliveries`/`subscription_grants`/`student_guardians` 一起清掉；`lesson_ledger` 等业务流水保留。仍绑定在读学员时返回 409。
+
+16. **家长账号随学员同步**
+    学员 `status` 改成 `graduated`/`lost` 时，`data/crm.go` 的 `syncGuardianStatus` 会把“已无在读学员”的家长置为 `disabled`。因此「家长账号」页的“可清理”提示依赖学员状态正确维护；只在 `archived_at` 层面归档而没有改 `status` 的学员不会触发同步。
 
 ---
 
@@ -242,6 +254,7 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 - M3 任务：创建/发布/关闭/删除、一人一条 assignment、提交（文字+图片）、打回重交、批阅评分/评语/批改图、统计、模板、作业档案；
 - 站内通知：发布/批阅/打回写 `notifications`，家长门户弹窗 + 已读；
 - 微信订阅消息：`000006` 两张表 + `pkg/wx` + 额度/队列 worker + 家长门户「开启提醒」（2026-11-25，见 §7）；
+- 家长账号体系：手机号+密码登录（`000009`）、审批设初始密码、家长/老师自助改密、owner 账号总览/重置密码/物理删除、学员状态同步停用（2026-11-25，见 §5.15–5.16）；
 - 首页/工作台/页面纸面主题、长按批量操作、弹层修复、拍照/相册。
 
 生产已验证：M2/M3 主链路、逾期提交、删除、通知、批改图字段、家长隐私 DTO（D-13 随后提交）。

@@ -42,6 +42,8 @@ type StaffRepo interface {
 	ByPhone(ctx context.Context, phone string) (*Staff, error)
 	ByID(ctx context.Context, id string) (*Staff, error)
 	List(ctx context.Context) ([]*Staff, error)
+	// UpdatePassword 只更新密码哈希，避免自助改密覆盖其它字段。
+	UpdatePassword(ctx context.Context, staffID, passwordHash string) error
 }
 
 type PasswordHasher interface {
@@ -97,6 +99,29 @@ func (uc *AuthUsecase) Me(ctx context.Context, staffID string) (*Staff, error) {
 		return nil, ErrStaffDisabled
 	}
 	return staff, nil
+}
+
+// ChangePassword 账号自助改密（owner 与 assistant 都可用），必须验旧密码。
+func (uc *AuthUsecase) ChangePassword(ctx context.Context, staffID, oldPlain, newPlain string) error {
+	newPlain = strings.TrimSpace(newPlain)
+	if len([]rune(newPlain)) < 8 || len([]rune(newPlain)) > 64 {
+		return ErrWeakPassword
+	}
+	staff, err := uc.repo.ByID(ctx, staffID)
+	if err != nil {
+		return err
+	}
+	if staff.Status != StatusActive {
+		return ErrStaffDisabled
+	}
+	if !uc.hasher.Verify(staff.PasswordHash, strings.TrimSpace(oldPlain)) {
+		return ErrWrongPassword
+	}
+	hash, err := uc.hasher.Hash(newPlain)
+	if err != nil {
+		return err
+	}
+	return uc.repo.UpdatePassword(ctx, staffID, hash)
 }
 
 type CreateStaffInput struct {

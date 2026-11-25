@@ -2,21 +2,26 @@ package biz
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"strings"
 	"time"
 )
 
 var (
-	ErrStudentNotFound  = errors.New("student not found")
-	ErrGuardianNotFound = errors.New("guardian not found")
-	ErrInvalidStudent   = errors.New("invalid student")
-	ErrInvalidFollowUp  = errors.New("invalid follow up")
-	ErrInvalidCode      = errors.New("invalid binding code")
-	ErrCodeExpired      = errors.New("binding code expired")
-	ErrCodeUsed         = errors.New("binding code used")
-	ErrGuardianDisabled = errors.New("guardian disabled")
-	ErrBindPending      = errors.New("guardian pending")
+	ErrStudentNotFound     = errors.New("student not found")
+	ErrGuardianNotFound    = errors.New("guardian not found")
+	ErrInvalidStudent      = errors.New("invalid student")
+	ErrInvalidFollowUp     = errors.New("invalid follow up")
+	ErrInvalidCode         = errors.New("invalid binding code")
+	ErrCodeExpired         = errors.New("binding code expired")
+	ErrCodeUsed            = errors.New("binding code used")
+	ErrGuardianDisabled    = errors.New("guardian disabled")
+	ErrBindPending         = errors.New("guardian pending")
+	ErrWeakPassword        = errors.New("weak password")
+	ErrWrongPassword       = errors.New("wrong password")
+	ErrPasswordNotSet      = errors.New("password not set")
+	ErrGuardianHasStudents = errors.New("guardian still bound to students")
 )
 
 var (
@@ -58,6 +63,32 @@ type GuardianRequest struct {
 	Name      string
 	Status    string
 	CreatedAt time.Time
+	// PasswordHash 只用于登录校验，不出现在任何 DTO 里。
+	PasswordHash string
+	LastLoginAt  *time.Time
+}
+
+// HasPassword 表示家长是否已设置密码（未设置时只能靠绑定码首次进入）。
+func (g *GuardianRequest) HasPassword() bool {
+	return g != nil && strings.TrimSpace(g.PasswordHash) != ""
+}
+
+// GuardianAccount 是教师端家长账号管理列表的一行：一个账号可能对应多个学员。
+type GuardianAccount struct {
+	ID           string
+	Phone        string
+	Name         string
+	Status       string
+	HasPassword  bool
+	LastLoginAt  *time.Time
+	CreatedAt    time.Time
+	StudentIDs   []string
+	StudentNames []string
+}
+
+// StudentCount 是当前仍处于在读（未归档）状态的学员数。
+func (g *GuardianAccount) StudentCount() int {
+	return len(g.StudentIDs)
 }
 
 type BindingCode struct {
@@ -152,8 +183,16 @@ type CRMRepo interface {
 	AddFollowUp(ctx context.Context, f *FollowUp) (*FollowUp, error)
 	ListFollowUps(ctx context.Context, studentID string, limit int) ([]FollowUp, error)
 	ListPendingGuardians(ctx context.Context) ([]GuardianRequest, error)
-	ApproveGuardian(ctx context.Context, guardianID, studentID, actorID string) error
+	ApproveGuardian(ctx context.Context, guardianID, studentID, actorID, passwordHash string) error
 	RejectGuardian(ctx context.Context, guardianID, reason, actorID string) error
+	// ListGuardians 返回全部家长账号（含待审批），按状态与创建时间排序，供 owner 清理。
+	ListGuardians(ctx context.Context, status string) ([]GuardianAccount, error)
+	// DeleteGuardian 物理删除家长账号及其通知/订阅额度；仍绑定在读学员时拒绝。
+	DeleteGuardian(ctx context.Context, guardianID string) error
+	SetGuardianPassword(ctx context.Context, guardianID, passwordHash string) error
+	// GuardianPasswordHash 返回当前哈希（空串表示未设置），用于改密与首次登录设密。
+	GuardianPasswordHash(ctx context.Context, guardianID string) (string, error)
+	TouchGuardianLogin(ctx context.Context, guardianID string) error
 	CreateBindingCode(ctx context.Context, studentID, actorID string, ttl time.Duration) (*BindingCode, error)
 	RedeemBindingCode(ctx context.Context, phone, code string) (*GuardianRequest, []Student, error)
 	GuardianByPhone(ctx context.Context, phone string) (*GuardianRequest, error)
@@ -167,12 +206,24 @@ type CRMRepo interface {
 }
 
 type CRMUsecase struct {
-	repo CRMRepo
+	repo   CRMRepo
+	hasher PasswordHasher
 }
 
-func NewCRMUsecase(repo CRMRepo) *CRMUsecase {
-	return &CRMUsecase{repo: repo}
+func NewCRMUsecase(repo CRMRepo, hasher PasswordHasher) *CRMUsecase {
+	if hasher == nil {
+		hasher = missingHasher{}
+	}
+	return &CRMUsecase{repo: repo, hasher: hasher}
 }
+
+// missingHasher 在装配漏传 hasher 时直接报错，避免把明文当哈希写进库。
+type missingHasher struct{}
+
+func (missingHasher) Hash(string) (string, error) {
+	return "", errors.New("密码哈希器未装配")
+}
+func (missingHasher) Verify(string, string) bool { return false }
 
 func (uc *CRMUsecase) ListStudents(ctx context.Context, f StudentFilter) ([]Student, int, error) {
 	if f.Page <= 0 {
@@ -268,8 +319,136 @@ func (uc *CRMUsecase) PendingGuardians(ctx context.Context) ([]GuardianRequest, 
 	return uc.repo.ListPendingGuardians(ctx)
 }
 
-func (uc *CRMUsecase) ApproveGuardian(ctx context.Context, actor *Staff, guardianID, studentID string) error {
-	return uc.repo.ApproveGuardian(ctx, guardianID, studentID, actor.ID)
+// ApproveGuardian 审批通过并写入初始密码；password 为空时由 service 生成临时密码。
+func (uc *CRMUsecase) ApproveGuardian(ctx context.Context, actor *Staff, guardianID, studentID, password string) error {
+	password = strings.TrimSpace(password)
+	if !validGuardianPassword(password) {
+		return ErrWeakPassword
+	}
+	hash, err := uc.hasher.Hash(password)
+	if err != nil {
+		return err
+	}
+	return uc.repo.ApproveGuardian(ctx, guardianID, studentID, actor.ID, hash)
+}
+
+// Guardians 列出全部家长账号，供 owner 清理长期未绑定/无学员的账号。
+func (uc *CRMUsecase) Guardians(ctx context.Context, status string) ([]GuardianAccount, error) {
+	status = strings.TrimSpace(status)
+	switch status {
+	case "", "pending", "active", "rejected", "disabled":
+	default:
+		return nil, ErrGuardianNotFound
+	}
+	return uc.repo.ListGuardians(ctx, status)
+}
+
+// DeleteGuardian 删除家长账号；仍绑定在读学员时拒绝，先归档学员再删。
+func (uc *CRMUsecase) DeleteGuardian(ctx context.Context, actor *Staff, guardianID string) error {
+	if actor == nil || actor.Role != RoleOwner {
+		return ErrForbidden
+	}
+	if strings.TrimSpace(guardianID) == "" {
+		return ErrGuardianNotFound
+	}
+	return uc.repo.DeleteGuardian(ctx, guardianID)
+}
+
+// ResetGuardianPassword 由 owner 重置家长密码（家长忘记密码时的兜底）。
+func (uc *CRMUsecase) ResetGuardianPassword(ctx context.Context, actor *Staff, guardianID, password string) error {
+	if actor == nil || actor.Role != RoleOwner {
+		return ErrForbidden
+	}
+	password = strings.TrimSpace(password)
+	if !validGuardianPassword(password) {
+		return ErrWeakPassword
+	}
+	hash, err := uc.hasher.Hash(password)
+	if err != nil {
+		return err
+	}
+	return uc.repo.SetGuardianPassword(ctx, guardianID, hash)
+}
+
+// ChangeGuardianPassword 家长自助改密；old 为空且当前未设密码时视为首次设置。
+func (uc *CRMUsecase) ChangeGuardianPassword(ctx context.Context, guardianID, oldPassword, newPassword string) error {
+	newPassword = strings.TrimSpace(newPassword)
+	if !validGuardianPassword(newPassword) {
+		return ErrWeakPassword
+	}
+	current, err := uc.repo.GuardianPasswordHash(ctx, guardianID)
+	if err != nil {
+		return err
+	}
+	if current != "" {
+		if !uc.hasher.Verify(current, strings.TrimSpace(oldPassword)) {
+			return ErrWrongPassword
+		}
+	}
+	hash, err := uc.hasher.Hash(newPassword)
+	if err != nil {
+		return err
+	}
+	return uc.repo.SetGuardianPassword(ctx, guardianID, hash)
+}
+
+// VerifyGuardianPassword 校验家长登录密码；未设置密码时返回 ErrPasswordNotSet。
+func (uc *CRMUsecase) VerifyGuardianPassword(ctx context.Context, guardian *GuardianRequest, plain string) error {
+	if guardian == nil {
+		return ErrGuardianNotFound
+	}
+	if !guardian.HasPassword() {
+		return ErrPasswordNotSet
+	}
+	if !uc.hasher.Verify(guardian.PasswordHash, strings.TrimSpace(plain)) {
+		return ErrWrongPassword
+	}
+	return uc.repo.TouchGuardianLogin(ctx, guardian.ID)
+}
+
+// SetInitialGuardianPassword 首次设密（绑定码登录时使用），当前已有密码则拒绝覆盖。
+func (uc *CRMUsecase) SetInitialGuardianPassword(ctx context.Context, guardianID, password string) error {
+	password = strings.TrimSpace(password)
+	if !validGuardianPassword(password) {
+		return ErrWeakPassword
+	}
+	current, err := uc.repo.GuardianPasswordHash(ctx, guardianID)
+	if err != nil {
+		return err
+	}
+	if current != "" {
+		return ErrWrongPassword
+	}
+	hash, err := uc.hasher.Hash(password)
+	if err != nil {
+		return err
+	}
+	return uc.repo.SetGuardianPassword(ctx, guardianID, hash)
+}
+
+// validGuardianPassword 家长密码规则：6~32 个字符，去掉首尾空格后不能为空。
+// staff 用 8 位起（见 auth.go），家长是手机端输入，门槛取 6。
+func validGuardianPassword(p string) bool {
+	n := len([]rune(p))
+	return n >= 6 && n <= 32
+}
+
+// NewTemporaryPassword 生成一次性初始密码（去掉易混淆的 0/O/1/l/I）。
+func NewTemporaryPassword() string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		// rand.Read 只在系统熵源不可用时失败；退化到时间派生值也要保证可登录。
+		now := time.Now().UnixNano()
+		for i := range buf {
+			buf[i] = byte(now >> (uint(i) * 5))
+		}
+	}
+	out := make([]byte, len(buf))
+	for i, b := range buf {
+		out[i] = alphabet[int(b)%len(alphabet)]
+	}
+	return string(out)
 }
 
 func (uc *CRMUsecase) RejectGuardian(ctx context.Context, actor *Staff, guardianID, reason string) error {

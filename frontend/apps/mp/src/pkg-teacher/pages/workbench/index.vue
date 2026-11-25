@@ -21,7 +21,8 @@ type ActionKey =
   | "students"
   | "guardians"
   | "import"
-  | "staff";
+  | "staff"
+  | "password";
 
 interface ActionItem {
   key: ActionKey;
@@ -79,9 +80,10 @@ const actions = computed<ActionItem[]>(() => {
       badge: summary.value?.low_balance_students,
     },
     { key: "students", title: "学员档案", desc: "分组、跟进、回访", icon: "学" },
-    { key: "guardians", title: "绑定审批", desc: "家长申请与解绑", icon: "家", ownerOnly: true },
+    { key: "guardians", title: "家长账号", desc: "审批、设密码、清理", icon: "家", ownerOnly: true },
     { key: "import", title: "导入学员", desc: "Excel 批量导入", icon: "导", ownerOnly: true },
     { key: "staff", title: "成员管理", desc: "老师账号与权限", icon: "员", ownerOnly: true },
+    { key: "password", title: "修改密码", desc: "登录密码自助修改", icon: "密" },
   ];
   return list.filter((item) => !item.ownerOnly || session.isOwner);
 });
@@ -134,6 +136,7 @@ function go(key: ActionKey): void {
     guardians: "/pkg-teacher/pages/guardians/index",
     import: "/pkg-teacher/pages/import/index",
     staff: "/pkg-teacher/pages/staff/index",
+    password: "/pkg-teacher/pages/password/index",
   };
   uni.navigateTo({ url: routes[key] });
 }

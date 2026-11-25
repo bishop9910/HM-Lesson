@@ -48,6 +48,18 @@ func (r *fakeStaffRepo) Update(_ context.Context, s *Staff) error {
 	return ErrStaffNotFound
 }
 
+func (r *fakeStaffRepo) UpdatePassword(_ context.Context, staffID, passwordHash string) error {
+	for i, row := range r.rows {
+		if row.ID == staffID {
+			copied := *row
+			copied.PasswordHash = passwordHash
+			r.rows[i] = &copied
+			return nil
+		}
+	}
+	return ErrStaffNotFound
+}
+
 func (r *fakeStaffRepo) ByPhone(_ context.Context, phone string) (*Staff, error) {
 	for _, row := range r.rows {
 		if row.Phone == phone {

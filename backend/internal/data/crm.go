@@ -156,7 +156,34 @@ func (r *crmRepo) UpdateStudent(ctx context.Context, id string, in biz.UpdateStu
 			return nil, biz.ErrStudentNotFound
 		}
 	}
+	if in.Status != nil {
+		// 学员结课/流失后，家长若已没有任何在读学员，账号转为 disabled，进入 owner 的待清理列表。
+		if err := r.syncGuardianStatus(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 	return r.GetStudent(ctx, id)
+}
+
+// syncGuardianStatus 在学员状态变化后同步家长账号：没有在读学员的家长置为 disabled。
+func (r *crmRepo) syncGuardianStatus(ctx context.Context, studentID string) error {
+	var active int64
+	if err := r.db.WithContext(ctx).Raw(
+		"SELECT COUNT(*) FROM students WHERE id = ? AND archived_at IS NULL AND status = 'active'", studentID).
+		Scan(&active).Error; err != nil {
+		return err
+	}
+	if active > 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE guardians g SET g.status='disabled', g.updated_at=NOW(3)
+		  WHERE g.status='active'
+		    AND EXISTS (SELECT 1 FROM student_guardians sg WHERE sg.guardian_id = g.id AND sg.student_id = ?)
+		    AND NOT EXISTS (
+		      SELECT 1 FROM student_guardians sg2 JOIN students s2 ON s2.id = sg2.student_id
+		       WHERE sg2.guardian_id = g.id AND s2.archived_at IS NULL AND s2.status='active'
+		    )`, studentID).Error
 }
 
 type followUpRow struct {
@@ -238,7 +265,7 @@ func (r *crmRepo) ListPendingGuardians(ctx context.Context) ([]biz.GuardianReque
 	return out, nil
 }
 
-func (r *crmRepo) ApproveGuardian(ctx context.Context, guardianID, studentID, actorID string) error {
+func (r *crmRepo) ApproveGuardian(ctx context.Context, guardianID, studentID, actorID, passwordHash string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Raw("SELECT COUNT(*) FROM students WHERE id = ? AND archived_at IS NULL", studentID).Scan(&count).Error; err != nil {
@@ -248,11 +275,12 @@ func (r *crmRepo) ApproveGuardian(ctx context.Context, guardianID, studentID, ac
 			return biz.ErrStudentNotFound
 		}
 		res := tx.Exec(
-			`UPDATE guardians SET status='active', approved_by=?, approved_at=NOW(3), bound_at=NOW(3), rejected_reason=NULL
+			`UPDATE guardians SET status='active', approved_by=?, approved_at=NOW(3), bound_at=NOW(3), rejected_reason=NULL,
+			        password_hash=CASE WHEN ? = '' THEN password_hash ELSE ? END
 			 WHERE id=?
 			   AND (status='pending' OR (status='active' AND NOT EXISTS (
 			         SELECT 1 FROM student_guardians sg WHERE sg.guardian_id = guardians.id
-			       )))`, actorID, guardianID)
+			       )))`, actorID, passwordHash, passwordHash, guardianID)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -382,14 +410,16 @@ func (r *crmRepo) RedeemBindingCode(ctx context.Context, phone, code string) (*b
 
 func (r *crmRepo) GuardianByPhone(ctx context.Context, phone string) (*biz.GuardianRequest, error) {
 	var row struct {
-		ID        string
-		Phone     string
-		Name      string
-		Status    string
-		CreatedAt time.Time
+		ID           string
+		Phone        string
+		Name         string
+		Status       string
+		PasswordHash string
+		LastLoginAt  sql.NullTime
+		CreatedAt    time.Time
 	}
 	err := r.db.WithContext(ctx).
-		Raw(`SELECT id,phone,name,status,created_at FROM guardians WHERE phone = ?
+		Raw(`SELECT id,phone,name,status,password_hash,last_login_at,created_at FROM guardians WHERE phone = ?
 		     ORDER BY FIELD(status,'active','pending','rejected','disabled'), created_at LIMIT 1`, phone).
 		Scan(&row).Error
 	if err != nil {
@@ -398,7 +428,15 @@ func (r *crmRepo) GuardianByPhone(ctx context.Context, phone string) (*biz.Guard
 	if row.ID == "" {
 		return nil, biz.ErrGuardianNotFound
 	}
-	return &biz.GuardianRequest{ID: row.ID, Phone: row.Phone, Name: row.Name, Status: row.Status, CreatedAt: row.CreatedAt}, nil
+	out := &biz.GuardianRequest{
+		ID: row.ID, Phone: row.Phone, Name: row.Name, Status: row.Status,
+		PasswordHash: row.PasswordHash, CreatedAt: row.CreatedAt,
+	}
+	if row.LastLoginAt.Valid {
+		t := row.LastLoginAt.Time
+		out.LastLoginAt = &t
+	}
+	return out, nil
 }
 
 // BindGuardianOpenID 记录网关注入的 openid。同一 openid 已被另一条家长记录占用时忽略，
@@ -416,6 +454,138 @@ func (r *crmRepo) BindGuardianOpenID(ctx context.Context, guardianID, openid str
 			"UPDATE guardians SET openid=?, updated_at=NOW(3) WHERE id=? AND (openid IS NULL OR openid <> ?)",
 			openid, guardianID, openid).Error
 	})
+}
+
+// SetGuardianPassword 写入密码哈希；空哈希表示清除密码（不可用于登录）。
+func (r *crmRepo) SetGuardianPassword(ctx context.Context, guardianID, passwordHash string) error {
+	res := r.db.WithContext(ctx).Exec(
+		"UPDATE guardians SET password_hash=?, updated_at=NOW(3) WHERE id=?", passwordHash, guardianID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return biz.ErrGuardianNotFound
+	}
+	return nil
+}
+
+func (r *crmRepo) GuardianPasswordHash(ctx context.Context, guardianID string) (string, error) {
+	var row struct{ PasswordHash string }
+	if err := r.db.WithContext(ctx).
+		Raw("SELECT password_hash FROM guardians WHERE id = ?", guardianID).
+		Scan(&row).Error; err != nil {
+		return "", err
+	}
+	if row.PasswordHash == "" {
+		// 分不清“没设过密码”和“账号不存在”会掩盖越权，先确认账号存在。
+		var exists int64
+		if err := r.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM guardians WHERE id = ?", guardianID).Scan(&exists).Error; err != nil {
+			return "", err
+		}
+		if exists == 0 {
+			return "", biz.ErrGuardianNotFound
+		}
+	}
+	return row.PasswordHash, nil
+}
+
+func (r *crmRepo) TouchGuardianLogin(ctx context.Context, guardianID string) error {
+	return r.db.WithContext(ctx).Exec(
+		"UPDATE guardians SET last_login_at=NOW(3) WHERE id=?", guardianID).Error
+}
+
+// ListGuardians 列出家长账号，带上仍绑定（学员未归档）的学员姓名，供 owner 清理。
+func (r *crmRepo) ListGuardians(ctx context.Context, status string) ([]biz.GuardianAccount, error) {
+	args := make([]any, 0, 1)
+	where := ""
+	if status != "" {
+		where = "WHERE g.status = ?"
+		args = append(args, status)
+	}
+	var rows []struct {
+		ID          string
+		Phone       string
+		Name        string
+		Status      string
+		PasswordLen int
+		LastLoginAt sql.NullTime
+		CreatedAt   time.Time
+		StudentIDs  string
+		StudentName string
+	}
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT g.id, g.phone, g.name, g.status, CHAR_LENGTH(g.password_hash) AS password_len,
+		        g.last_login_at, g.created_at,
+		        COALESCE(GROUP_CONCAT(DISTINCT s.id ORDER BY s.created_at), '') AS student_ids,
+		        COALESCE(GROUP_CONCAT(DISTINCT s.name ORDER BY s.created_at SEPARATOR ','), '') AS student_name
+		   FROM guardians g
+		   LEFT JOIN student_guardians sg ON sg.guardian_id = g.id
+		   LEFT JOIN students s ON s.id = sg.student_id AND s.archived_at IS NULL
+		   `+where+`
+		  GROUP BY g.id, g.phone, g.name, g.status, g.password_hash, g.last_login_at, g.created_at
+		  ORDER BY FIELD(g.status,'pending','active','disabled','rejected'), g.created_at DESC`,
+		args...).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]biz.GuardianAccount, 0, len(rows))
+	for _, row := range rows {
+		acc := biz.GuardianAccount{
+			ID: row.ID, Phone: row.Phone, Name: row.Name, Status: row.Status,
+			HasPassword: row.PasswordLen > 0, CreatedAt: row.CreatedAt,
+			StudentIDs: splitConcat(row.StudentIDs), StudentNames: splitConcat(row.StudentName),
+		}
+		if row.LastLoginAt.Valid {
+			t := row.LastLoginAt.Time
+			acc.LastLoginAt = &t
+		}
+		out = append(out, acc)
+	}
+	return out, nil
+}
+
+// DeleteGuardian 删除家长账号：先清掉通知/订阅额度/学员关联（外键要求），再删主体。
+// 仍绑定在读学员时拒绝——学员先退课归档，再清理家长账号。
+func (r *crmRepo) DeleteGuardian(ctx context.Context, guardianID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var bound int64
+		if err := tx.Raw(
+			`SELECT COUNT(*) FROM student_guardians sg
+			   JOIN students s ON s.id = sg.student_id
+			  WHERE sg.guardian_id = ? AND s.archived_at IS NULL`, guardianID).Scan(&bound).Error; err != nil {
+			return err
+		}
+		if bound > 0 {
+			return biz.ErrGuardianHasStudents
+		}
+		for _, stmt := range []string{
+			"DELETE FROM notification_deliveries WHERE guardian_id = ?",
+			"DELETE FROM subscription_grants WHERE guardian_id = ?",
+			"DELETE FROM notifications WHERE guardian_id = ?",
+			"DELETE FROM student_guardians WHERE guardian_id = ?",
+		} {
+			if err := tx.Exec(stmt, guardianID).Error; err != nil {
+				return err
+			}
+		}
+		res := tx.Exec("DELETE FROM guardians WHERE id = ?", guardianID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return biz.ErrGuardianNotFound
+		}
+		return nil
+	})
+}
+
+// splitConcat 把 GROUP_CONCAT 的逗号串拆开；空串返回 nil 切片。
+func splitConcat(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }
 
 func (r *crmRepo) PortalHome(ctx context.Context, guardianID string) (*biz.PortalHome, error) {

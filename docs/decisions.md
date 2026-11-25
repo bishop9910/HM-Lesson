@@ -479,5 +479,24 @@
 
 **补充（2026-11-25）：云托管必须走「云调用」通道。** 实测容器内 `api.weixin.qq.com` 被平台 DNS 改写到 `169.254.10.1`，未在控制台「云调用 → 微信令牌权限」放行的接口一律 `connection refused`；同期 `www.baidu.com` 的 443 可通，证明公网出口本身正常。因此 `pkg/wx` 增加第二种调用方式：`HM_WX_CALL_MODE=cloud` 时用 `NewCloudClient`，请求 `http://api.weixin.qq.com`、不带 `access_token`（由平台网关鉴权）、也不需要 `HM_WX_APP_SECRET`；默认值仍是 `direct`，本地与非云托管环境行为不变。代价是生产依赖控制台配置（开放接口服务 + `subscribeMessage.send` 权限），配置缺失时表现为发送全部 `failed`，但业务写操作不受影响。
 
+## ADR-030 家长账号改为「手机号 + 密码」，并由 owner 管理账号生命周期
+
+**背景**：此前家长只要知道手机号就能登录门户（`GuardianByPhone` 直接签发 token），等于没有凭据；同时测试中出现「家长提交绑定申请后直接 active 但没有学员关联」的脏账号，审批页看不到、也没人能清理，长期累积成垃圾数据。用户要求：家长账号要有密码；所有账号（含 owner）能自己改密码；owner 能删除长期未绑定家长的绑定申请与账号；家长账号要随学员状态同步清理。
+
+**决定**：
+- `guardians` 增加 `password_hash`（Argon2id，`NOT NULL DEFAULT ''`）与 `last_login_at`，新增 `idx_guardians_status_created`（`000009_guardian_passwords`）。
+- 登录：`POST /api/v1/auth/guardian/login` 改为 `{phone, password}`；也接受 `{phone, code, password}`（绑定码首次绑定 + 当场设密码，缺密码返回 `PASSWORD_REQUIRED`）。未设密码的旧账号不能密码登录，会明确提示用绑定码进入并设密。
+- 审批：`POST /api/v1/guardians/{id}/approve` 支持 `password`；不传则服务端生成一次性 8 位密码，**只在响应里返回一次**（`initial_password`），老师转告家长。
+- 自助改密：`POST /api/v1/auth/password`（staff，owner/assistant 均可）、`POST /api/v1/auth/guardian/password`（家长，未设过密码时允许不带旧密码）。
+- owner 管理：`GET /api/v1/guardians`（含学员姓名、是否设密、最近登录、`student_count`）、`DELETE /api/v1/guardians/{id}`（仍绑定在读学员返回 409 `GUARDIAN_HAS_STUDENTS`；删除时连带清理 notifications / notification_deliveries / subscription_grants / student_guardians）、`POST /api/v1/guardians/{id}/password`（重置密码）。
+- 与学员同步：学员 `status` 改为非 `active` 后，若家长已无任何在读学员，账号自动置 `disabled`，进入「可清理」列表；家长端因此无法继续登录。
+- 密码规则：家长 6~32 位（手机端输入），老师 8~64 位；全部只存 Argon2id 哈希，任何接口都不回传哈希。
+
+**理由**：手机号即凭据等于零鉴权，泄露一次手机号就能看别人孩子的成绩；而家长群体不可能记住复杂规则，所以阈值取 6 位。账号清理必须由 owner 显式执行（物理删除不可撤销），但「何时可删」由学员状态自动推导，避免老师手工判断遗漏。
+
+**影响**：老家长账号（`password_hash=''`）在 owner 补设/重置密码前无法密码登录；家长登录页与教师端新增页面；删除账号会连带删除历史通知（但 `lesson_ledger` 等业务流水保留，`operator_id` 为老师）。
+
+**回滚**：`000009` 的 down 删除两列与索引；服务端回滚到旧版本后家长仍可按手机号登录（旧逻辑），但已设置的密码失效。
+
 
 

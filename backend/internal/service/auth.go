@@ -176,6 +176,27 @@ func (s *Server) requireStaff(ctx khttp.Context, ownerOnly bool) (*biz.Staff, er
 	return staff, nil
 }
 
+// ChangePassword 是账号自助改密：owner 与 assistant 都可用，必须提供旧密码。
+func (s *Server) ChangePassword(ctx khttp.Context) error {
+	staff, err := s.requireStaff(ctx, false)
+	if err != nil {
+		return err
+	}
+	var req changePasswordRequest
+	if err := ctx.Bind(&req); err != nil {
+		return fail(ctx, http.StatusBadRequest, "BAD_REQUEST", "请求格式错误")
+	}
+	if err := s.uc.ChangePassword(ctx, staff.ID, req.OldPassword, req.NewPassword); err != nil {
+		return mapBizError(ctx, err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
 func mapBizError(ctx khttp.Context, err error) error {
 	switch {
 	case errors.Is(err, biz.ErrForbidden):
@@ -186,6 +207,10 @@ func mapBizError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusNotFound, "NOT_FOUND", "老师不存在")
 	case errors.Is(err, biz.ErrStaffDisabled):
 		return fail(ctx, http.StatusUnauthorized, "UNAUTHORIZED", "账号已停用")
+	case errors.Is(err, biz.ErrWrongPassword):
+		return fail(ctx, http.StatusForbidden, "WRONG_PASSWORD", "旧密码不正确")
+	case errors.Is(err, biz.ErrWeakPassword):
+		return fail(ctx, http.StatusBadRequest, "WEAK_PASSWORD", "密码至少 8 位")
 	default:
 		return fail(ctx, http.StatusInternalServerError, "INTERNAL", "操作失败")
 	}

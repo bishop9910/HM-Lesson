@@ -4,21 +4,37 @@ import { ApiError, request } from "@/utils/request";
 
 const phone = ref("");
 const code = ref("");
+const password = ref("");
 const loading = ref(false);
 const errorText = ref("");
+
+function fillCodeLogin(): boolean {
+  return code.value.trim().length > 0;
+}
 
 async function login(): Promise<void> {
   if (!/^1\d{10}$/.test(phone.value.trim())) {
     uni.showToast({ title: "请输入 11 位手机号", icon: "none" });
     return;
   }
+  if (!fillCodeLogin() && password.value.trim().length === 0) {
+    uni.showToast({ title: "请输入密码", icon: "none" });
+    return;
+  }
   loading.value = true;
   errorText.value = "";
   try {
-    const res = await request<{ token: string; guardian: { phone: string } }>(
+    const res = await request<{
+      token: string;
+      guardian: { phone: string; has_password?: boolean };
+    }>(
       "/api/v1/auth/guardian/login",
       "POST",
-      { phone: phone.value.trim(), code: code.value.trim() },
+      {
+        phone: phone.value.trim(),
+        code: code.value.trim(),
+        password: password.value.trim(),
+      },
       "none",
     );
     uni.setStorageSync("hm_guardian_token", res.token);
@@ -45,8 +61,23 @@ function goBind(): void {
 
     <view class="form">
       <input v-model="phone" class="field" type="number" maxlength="11" placeholder="家长手机号" />
-      <input v-model="code" class="field" type="number" maxlength="6" placeholder="绑定码（首次绑定必填）" />
-      <text class="tip">已通过老师审批的家长，只填手机号即可登录；首次绑定请输入老师给的 6 位绑定码。</text>
+      <input
+        v-model="password"
+        class="field"
+        password
+        maxlength="32"
+        placeholder="密码（首次绑定码登录时设置）"
+      />
+      <input
+        v-model="code"
+        class="field"
+        type="number"
+        maxlength="6"
+        placeholder="绑定码（选填，首次绑定用）"
+      />
+      <text class="tip">
+        已审批的家长用手机号 + 密码登录；第一次绑定填老师给的 6 位绑定码，并在这里设置密码（6~32 位）。
+      </text>
       <text v-if="errorText" class="error">{{ errorText }}</text>
       <button class="primary" :loading="loading" @click="login">登录</button>
       <button class="ghost" @click="goBind">还没有绑定？提交申请</button>

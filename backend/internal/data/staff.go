@@ -54,6 +54,20 @@ func (r *StaffRepo) Update(ctx context.Context, s *biz.Staff) error {
 	).Error
 }
 
+// UpdatePassword 自助改密只写这一列，避免与成员管理（Update）互相覆盖字段。
+func (r *StaffRepo) UpdatePassword(ctx context.Context, staffID, passwordHash string) error {
+	res := r.db.WithContext(ctx).Exec(
+		"UPDATE staff SET password_hash = ?, updated_at = NOW(3) WHERE id = ? AND deleted_at IS NULL",
+		passwordHash, staffID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return biz.ErrStaffNotFound
+	}
+	return nil
+}
+
 func (r *StaffRepo) ByPhone(ctx context.Context, phone string) (*biz.Staff, error) {
 	var row staffRow
 	err := r.db.WithContext(ctx).
