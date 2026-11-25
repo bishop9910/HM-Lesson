@@ -40,6 +40,10 @@
     {
       "path": "pages/portal/archive",
       "style": { "navigationBarTitleText": "作业档案" }
+    },
+    {
+      "path": "pages/portal/booking",
+      "style": { "navigationBarTitleText": "预约上课" }
     }
   ],
   "subPackages": [
@@ -85,6 +89,18 @@
         {
           "path": "pages/reviews/index",
           "style": { "navigationBarTitleText": "待批阅" }
+        },
+        {
+          "path": "pages/slots/index",
+          "style": { "navigationBarTitleText": "可预约时段" }
+        },
+        {
+          "path": "pages/bookings/index",
+          "style": { "navigationBarTitleText": "预约审核" }
+        },
+        {
+          "path": "pages/lessons/index",
+          "style": { "navigationBarTitleText": "课时台账" }
         }
       ]
     }

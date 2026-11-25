@@ -401,6 +401,23 @@ func (r *crmRepo) GuardianByPhone(ctx context.Context, phone string) (*biz.Guard
 	return &biz.GuardianRequest{ID: row.ID, Phone: row.Phone, Name: row.Name, Status: row.Status, CreatedAt: row.CreatedAt}, nil
 }
 
+// BindGuardianOpenID 记录网关注入的 openid。同一 openid 已被另一条家长记录占用时忽略，
+// 不阻断登录（唯一索引 uq_guardians_openid 会拒绝重复写入）。
+func (r *crmRepo) BindGuardianOpenID(ctx context.Context, guardianID, openid string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing string
+		if err := tx.Raw("SELECT id FROM guardians WHERE openid = ? LIMIT 1", openid).Scan(&existing).Error; err != nil {
+			return err
+		}
+		if existing != "" && existing != guardianID {
+			return nil
+		}
+		return tx.Exec(
+			"UPDATE guardians SET openid=?, updated_at=NOW(3) WHERE id=? AND (openid IS NULL OR openid <> ?)",
+			openid, guardianID, openid).Error
+	})
+}
+
 func (r *crmRepo) PortalHome(ctx context.Context, guardianID string) (*biz.PortalHome, error) {
 	var g struct {
 		Name  string

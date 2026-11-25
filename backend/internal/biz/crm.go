@@ -157,6 +157,8 @@ type CRMRepo interface {
 	CreateBindingCode(ctx context.Context, studentID, actorID string, ttl time.Duration) (*BindingCode, error)
 	RedeemBindingCode(ctx context.Context, phone, code string) (*GuardianRequest, []Student, error)
 	GuardianByPhone(ctx context.Context, phone string) (*GuardianRequest, error)
+	// BindGuardianOpenID 记录网关注入的微信 openid，用于后续订阅消息投递。
+	BindGuardianOpenID(ctx context.Context, guardianID, openid string) error
 	PortalHome(ctx context.Context, guardianID string) (*PortalHome, error)
 	PortalStudent(ctx context.Context, guardianID, studentID string) (*PortalStudent, error)
 	UnreadNotifications(ctx context.Context, guardianID string, limit int) ([]Notification, error)
@@ -294,6 +296,16 @@ func (uc *CRMUsecase) GuardianLoginByCode(ctx context.Context, phone, code strin
 
 func (uc *CRMUsecase) GuardianByPhone(ctx context.Context, phone string) (*GuardianRequest, error) {
 	return uc.repo.GuardianByPhone(ctx, phone)
+}
+
+// BindGuardianOpenID 采集网关注入的微信 openid；空值直接跳过。
+// 失败不影响登录：订阅消息是增强通道，站内通知仍是保底。
+func (uc *CRMUsecase) BindGuardianOpenID(ctx context.Context, guardianID, openid string) error {
+	openid = strings.TrimSpace(openid)
+	if openid == "" || strings.TrimSpace(guardianID) == "" {
+		return nil
+	}
+	return uc.repo.BindGuardianOpenID(ctx, guardianID, openid)
 }
 
 func (uc *CRMUsecase) PortalHome(ctx context.Context, guardianID string) (*PortalHome, error) {

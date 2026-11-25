@@ -197,6 +197,8 @@
 
 > **2026-11-22 方言修正**：MySQL 5.7.18 不支持部分唯一索引。实现改为 `active_flag` 生成列（`CASE WHEN status IN ('pending','approved') THEN 1 ELSE NULL END`）+ `UNIQUE(slot_id, active_flag)`；或事务内 `SELECT ... FOR UPDATE` 作为补充。语义不变，TC-08 仍要求数据库级约束。
 
+> **2026-11-25 落地补充**：`backend/migrations/000007_bookings_lessons.up.sql` 已按上述方式建 `uq_bookings_active_slot(slot_id, active_flag)`；提交预约在事务内先 `SELECT ... FOR UPDATE` 锁时段再 `UPDATE slots SET status='locked' WHERE status='open'`，唯一索引兜底并发穿透（1062 映射 409 `BOOKING_SLOT_TAKEN`）。**时段之间“同一老师不重叠”在 5.7 无 `EXCLUDE` 可用，只能由应用层在 `CreateSlot` / `BatchCreateSlots` 的同一事务里做区间相交校验**（`ensureNoOverlap`），这是与原始“数据库级约束”唯一的降级点，写在这里以免后人误以为有库级保证。消课的“只扣一次”同理用 `lesson_ledger.consume_ref_id` 生成列 + `uq_lesson_ledger_consume` 实现。
+
 **回滚**：改为“审核通过才锁”需迁移索引并处理已占位数据，成本中等，故先在 Q9 确认。
 
 ---
@@ -454,6 +456,26 @@
 **影响**：执行器需自己保证解析/顺序/锁/失败回滚语义；迁移文件命名必须严格成对；生产只前进，破坏性 down 需备份与人工确认；CI 必须在空库跑 `up → down → up`。将来若需要更复杂能力（out-of-order、强制版本、多数据库驱动），可替换为 golang-migrate，迁移文件格式保持兼容。
 
 **回滚**：保留迁移文件格式不变，直接换成 golang-migrate 的 embed 源即可；版本表结构兼容（version/name/applied_at）。
+
+---
+
+## ADR-029 微信订阅消息：一次额度表 + 进程内投递 worker + 模板全配置
+
+**背景**：Q7 已定「订阅消息 + 站内信」，M3 只落了站内弹窗。个人主体未认证，无法用手机号快速验证，也没有短信兜底；作业发布/批改要让家长在微信里看到，只能走一次性订阅消息（`wx.requestSubscribeMessage`，每次 accept 只能发一条）。云托管实例随时可能被回收，不能在请求里同步调微信接口，也不引入 Redis/独立 worker 容器（Q24、ADR-024）。
+
+**决定**：
+- 新增 `subscription_grants(guardian_id, template_key, remaining, last_requested_at)`，`UNIQUE(guardian_id, template_key)`；用户 accept 一次 `remaining +1`（上限 3），发送成功 `-1`，无额度时只写站内通知，不弹微信。
+- 新增 `notification_deliveries` 作为投递队列；**入队与业务写操作在同一事务内**（发布、批阅），文案以变量快照（`title/student/date/due_at/score`）落 `payload`，worker 发送时按模板 `fields` 渲染并截断。
+- 模板配置走单个环境变量 `HM_WX_SUBSCRIBE_TEMPLATES`（JSON：`template_key -> {id, fields{关键词:变量名}}`），另加 `HM_WX_TMPL_LANG`、`HM_WX_MP_STATE`；缺 AppID/AppSecret/模板时 sender 为 nil，整条链路 no-op（只留站内信），业务接口不报错。
+- worker 由 kratos `AfterStart` 起 goroutine、`Stop()` 取消 ctx 退出，30 秒一轮、启动先跑一次；取件用 `SELECT ... FOR UPDATE` + `UPDATE status='sending'` 两段式（MySQL 5.7 无 `SKIP LOCKED`），10 分钟仍 `sending` 的由 `ResetStaleDeliveries` 放回 `pending`；失败 1/2/4 分钟退避（上限 10 分钟），最多 3 次，永久错误直接 `failed`。
+- openid 只在家长登录时从网关注入头采集，且必须 `X-WX-SOURCE` 非空才可信；同一 openid 已被其它 `guardians` 行占用时忽略，不阻断登录。
+- 新增接口 `GET /api/v1/portal/subscriptions`、`POST /api/v1/portal/subscriptions`（只支持家长 token）。
+
+**理由**：订阅消息是微信允许的、唯一不依赖域名/短信的触达手段；模板 ID 只能在公众平台后台看到，硬编码或猜关键词必然 47003，所以全部外置为配置；额度与队列落库而不是进程内，实例回收不丢任务，也天然满足幂等重试。
+
+**影响**：新增两张表与一个后台 goroutine，多实例部署前必须换成带 `SKIP LOCKED` 的领取方式或共享锁（当前 MVP `min=max=1`）；不退还已消耗额度（微信侧已扣），家长需重新点“开启提醒”；模板关键词固定要求运营方在后台按 `fields` 中的变量名填写，否则发送报 47003 并置 `failed`。
+
+**回滚**：删掉 `HM_WX_SUBSCRIBE_TEMPLATES`（或 AppSecret）即整体退回“只发站内信”；`000006` 的 down 会删除两张新表，站内通知不受影响。
 
 
 

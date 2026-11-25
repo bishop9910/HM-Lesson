@@ -12,20 +12,21 @@
 
 **不再使用**：Debian 自建服务器、Docker Compose 生产部署、Caddy/Nginx 反向代理、自建 SeaweedFS/MinIO（生产）、服务器域名与域名 ICP 备案依赖（小程序侧；小程序备案已完成）。
 
-当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回/批改图、家长任务/提交/拍照/档案、发布与批阅站内弹窗通知。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**生产已验证** M2/M3 主链路、逾期提交、任务删除、站内通知与批改图字段；**待真机验证**相机拍摄/`wx.cloud.uploadFile` 与小程序弹窗点按。不要假设任何业务接口、表数据、页面已完成。
+当前状态：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）+ 微信订阅消息（2026-11-25）+ M4 一对一预约与课时（2026-11-25）**。Kratos v3 已接入，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`migrations/*.sql` 版本化迁移与启动自动 up、`/api/v1/dashboard/summary`、`/api/v1/auth/bind-request` 家长绑定申请；M2 已落盘学员档案/跟进/绑定审批/6 位绑定码/guardian 登录/家长门户接口与页面；M3 已落盘教师任务列表/新建/发布/关闭/统计/逐份批阅/打回/批改图、家长任务/提交/拍照/档案、发布与批阅站内弹窗通知；订阅消息（`000006`）已落盘一次性额度 `subscription_grants` + 投递队列 `notification_deliveries` + `pkg/wx` + 进程内 worker + 家长门户「开启提醒」，模板走 `HM_WX_SUBSCRIBE_TEMPLATES`，未配置时 no-op（ADR-029）；M4（`000007`）已落盘 `slots`/`bookings`/`lesson_accounts`/`lesson_ledger`、教师时段与预约审核、消课幂等与未到课不扣课时、家长预约与课时视图、四个小程序页面（时段/预约审核/课时/家长预约）。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录；`vue-tsc` 与 `mp-weixin` 构建通过。**生产已验证** M2/M3 主链路、逾期提交、任务删除、站内通知与批改图字段；**待部署验证** `000006`/`000007` 在真实 MySQL 5.7 上 up/down；**待真机验证**相机拍摄/`wx.cloud.uploadFile`、小程序弹窗点按、订阅消息服务通知与预约/课时链路。不要假设任何业务接口、表数据、页面已完成。
 
 ## 1. 开始任何任务前
 
 1. 读本文件。
-2. 读 [`docs/backend-requirements.md`](docs/backend-requirements.md)、[`docs/data-model.md`](docs/data-model.md)、[`docs/frontend-requirements.md`](docs/frontend-requirements.md)、[`docs/deploy-wechat-cloudrun.md`](docs/deploy-wechat-cloudrun.md) 中与你任务相关的章节。
-3. 打开 [`docs/open-questions.md`](docs/open-questions.md)，确认你要做的事**不依赖未决问题**。若依赖：
+2. 读 [`HANDOVER.md`](HANDOVER.md)（快速代码地图/接口/踩坑）与 [`TODO.md`](TODO.md)（当前优先级与待办）。
+3. 读 [`docs/backend-requirements.md`](docs/backend-requirements.md)、[`docs/data-model.md`](docs/data-model.md)、[`docs/frontend-requirements.md`](docs/frontend-requirements.md)、[`docs/deploy-wechat-cloudrun.md`](docs/deploy-wechat-cloudrun.md) 中与你任务相关的章节。
+4. 打开 [`docs/open-questions.md`](docs/open-questions.md)，确认你要做的事**不依赖未决问题**。若依赖：
    - 不要猜产品规则；
    - 在实现中留出清晰的配置点/接口边界，并在回复中明确“阻塞于 Qx”；
    - 必要时先向用户提问，再继续。
-4. 已定结论（2026-11-18）：Q1=B 小程序教师模式；Q2=个人主体未认证（绑定走手机号+审批/绑定码，禁用 `getPhoneNumber`）；Q4=`github.com/bishop9910/hm-lesson`；Q5=多老师可扩，支持同时多个老师；Q6=Excel 导入；Q7=订阅消息+站内信；Q8=未到课不自动扣课时；Q9=提交即锁时段；Q10=wot-design-uni；Q12=青绿视觉；Q13=一期不做支付；Q14=导出 xlsx；Q16=Go 已装、Docker 在 Debian；Q17=GitHub Actions；Q18=一期不做暗色。
-5. 2026-11-22 变更：Q15 由“Debian 单机 Compose”改为**微信云托管**；Q11 存储改为**云托管对象存储（COS/fileID）**，不再以 SeaweedFS 为生产默认；Q3 域名/备案对小程序侧**不再阻塞**（`callContainer`/`connectContainer` 不需要域名），仅在需要非小程序客户端时才涉及自定义域名。
-6. 已确认（2026-11-22 第二轮）：Q19=A（个人主体 + 工具类目先提审）、Q22=MySQL 5.7.18（本地容器/生产云托管）、Q23=生产 COS/本地 MinIO、Q24=一期不用 Redis、Q25=不绑自定义域名、Q26=AppID 不变更、Q27=GitHub Actions、Q28=A（功能范围全保留，IM 除外）。
-7. 用 `todo_write` 列出步骤；多步骤任务先给计划再动手。
+5. 已定结论（2026-11-18）：Q1=B 小程序教师模式；Q2=个人主体未认证（绑定走手机号+审批/绑定码，禁用 `getPhoneNumber`）；Q4=`github.com/bishop9910/hm-lesson`；Q5=多老师可扩，支持同时多个老师；Q6=Excel 导入；Q7=订阅消息+站内信；Q8=未到课不自动扣课时；Q9=提交即锁时段；Q10=wot-design-uni；Q12=青绿视觉；Q13=一期不做支付；Q14=导出 xlsx；Q16=Go 已装、Docker 在 Debian；Q17=GitHub Actions；Q18=一期不做暗色。
+6. 2026-11-22 变更：Q15 由“Debian 单机 Compose”改为**微信云托管**；Q11 存储改为**云托管对象存储（COS/fileID）**，不再以 SeaweedFS 为生产默认；Q3 域名/备案对小程序侧**不再阻塞**（`callContainer`/`connectContainer` 不需要域名），仅在需要非小程序客户端时才涉及自定义域名。
+7. 已确认（2026-11-22 第二轮）：Q19=A（个人主体 + 工具类目先提审）、Q22=MySQL 5.7.18（本地容器/生产云托管）、Q23=生产 COS/本地 MinIO、Q24=一期不用 Redis、Q25=不绑自定义域名、Q26=AppID 不变更、Q27=GitHub Actions、Q28=A（功能范围全保留，IM 除外）。
+8. 用 `todo_write` 列出步骤；多步骤任务先给计划再动手。
 
 ## 2. 文档优先级（冲突时）
 

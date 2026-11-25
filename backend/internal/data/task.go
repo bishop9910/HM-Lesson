@@ -150,9 +150,10 @@ WHERE (ref_type='task' AND ref_id=?)
 func (r *TaskRepo) PublishTask(ctx context.Context, taskID string, studentIDs []string) (int, error) {
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var status string
+		var status, title string
 		var due sql.NullTime
-		if err := tx.Raw("SELECT status,due_at FROM tasks WHERE id=? FOR UPDATE", taskID).Row().Scan(&status, &due); err != nil {
+		if err := tx.Raw("SELECT status,due_at,title FROM tasks WHERE id=? FOR UPDATE", taskID).
+			Row().Scan(&status, &due, &title); err != nil {
 			if err == sql.ErrNoRows {
 				return biz.ErrTaskNotFound
 			}
@@ -164,21 +165,38 @@ func (r *TaskRepo) PublishTask(ctx context.Context, taskID string, studentIDs []
 		if !due.Valid || !due.Time.After(time.Now()) {
 			return biz.ErrInvalidTask
 		}
-		var existing int
-		if err := tx.Raw("SELECT COUNT(*) FROM students WHERE id IN (?) AND archived_at IS NULL", studentIDs).Scan(&existing).Error; err != nil {
+		var students []struct {
+			ID   string
+			Name string
+		}
+		if err := tx.Raw("SELECT id,name FROM students WHERE id IN (?) AND archived_at IS NULL", studentIDs).
+			Scan(&students).Error; err != nil {
 			return err
 		}
-		if existing != len(studentIDs) {
+		if len(students) != len(studentIDs) {
 			return biz.ErrInvalidTask
 		}
+		names := make(map[string]string, len(students))
+		for _, st := range students {
+			names[st.ID] = st.Name
+		}
 		for _, sid := range studentIDs {
+			assignmentID := biz.NewID()
 			if err := tx.Exec(
 				"INSERT INTO task_assignments (id,task_id,student_id,status,created_at) VALUES (?,?,?,?,NOW(3))",
-				biz.NewID(), taskID, sid, biz.AssignmentPending,
+				assignmentID, taskID, sid, biz.AssignmentPending,
 			).Error; err != nil {
 				return err
 			}
 			count++
+			payload := map[string]string{"title": title, "student": names[sid]}
+			if due.Valid {
+				payload["due_at"] = cnTimeText(due.Time)
+			}
+			if err := enqueueDeliveries(tx, sid, biz.TemplateTaskPublished,
+				"/pages/portal/tasks/detail?id="+assignmentID, payload); err != nil {
+				return err
+			}
 		}
 		if err := tx.Exec(`
 INSERT INTO notifications (id,guardian_id,student_id,kind,title,body,ref_type,ref_id,created_at)
@@ -195,6 +213,12 @@ WHERE sg.student_id IN (?) AND g.status='active'`, taskID, studentIDs).Error; er
 		return tx.Exec("UPDATE tasks SET status=?,published_at=NOW(3) WHERE id=?", biz.TaskPublished, taskID).Error
 	})
 	return count, err
+}
+
+// cnTimeText 把库里的 UTC 时间格式化为北京时间文案，用于微信模板字段与站内信。
+// 中国无夏令时，固定 +8 偏移即可，避免容器缺少 tzdata 导致 LoadLocation 失败。
+func cnTimeText(t time.Time) string {
+	return t.Add(8 * time.Hour).Format("2006年01月02日 15:04")
 }
 
 func scanAssignment(row interface{ Scan(...any) error }) (*biz.TaskAssignment, error) {
@@ -345,28 +369,11 @@ func (r *TaskRepo) ReviewAssignment(ctx context.Context, assignmentID, reviewerI
 		}
 		reviewJSON = b
 	}
-	res := r.db.WithContext(ctx).Exec(`
-UPDATE task_assignments
-SET status=?,score=?,comment=?,return_reason=?,review_file_ids=?,reviewed_at=NOW(3),updated_at=NOW(3)
-WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, reviewJSON, assignmentID)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		var exists int
-		if err := r.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM task_assignments WHERE id=?", assignmentID).Scan(&exists).Error; err != nil {
-			return err
-		}
-		if exists == 0 {
-			return biz.ErrAssignmentNotFound
-		}
-		return biz.ErrAlreadyReviewed
-	}
-	kind := "task_reviewed"
+	kind := biz.TemplateTaskReviewed
 	title := "作业已批阅"
 	body := "老师已完成批阅，点击查看评分和评语。"
 	if status == biz.AssignmentReturned {
-		kind = "task_returned"
+		kind = biz.TemplateTaskReturned
 		title = "作业被打回"
 		body = "请按老师意见修改后重新提交。"
 		if returnReason != "" {
@@ -378,16 +385,57 @@ WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, rev
 	if len([]rune(body)) > 500 {
 		body = string([]rune(body)[:500])
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	// 批阅、站内通知与订阅消息入队必须在同一事务内：否则会出现“通知有了但消息没发/反之”。
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`
+UPDATE task_assignments
+SET status=?,score=?,comment=?,return_reason=?,review_file_ids=?,reviewed_at=NOW(3),updated_at=NOW(3)
+WHERE id=? AND status='submitted'`, status, scoreArg, comment, returnReason, reviewJSON, assignmentID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			var exists int
+			if err := tx.Raw("SELECT COUNT(*) FROM task_assignments WHERE id=?", assignmentID).Scan(&exists).Error; err != nil {
+				return err
+			}
+			if exists == 0 {
+				return biz.ErrAssignmentNotFound
+			}
+			return biz.ErrAlreadyReviewed
+		}
+		if err := tx.Exec(`
 INSERT INTO notifications (id,guardian_id,student_id,kind,title,body,ref_type,ref_id,created_at)
 SELECT UUID(),sg.guardian_id,a.student_id,?,?,?,'assignment',a.id,NOW(3)
 FROM task_assignments a
 JOIN student_guardians sg ON sg.student_id=a.student_id
 JOIN guardians g ON g.id=sg.guardian_id
 WHERE a.id=? AND g.status='active'`, kind, title, body, assignmentID).Error; err != nil {
-		return err
-	}
-	return nil
+			return err
+		}
+		var info struct {
+			StudentID   string
+			StudentName string
+			TaskTitle   string
+		}
+		if err := tx.Raw(`
+SELECT a.student_id AS student_id, s.name AS student_name, t.title AS task_title
+FROM task_assignments a
+JOIN students s ON s.id=a.student_id
+JOIN tasks t ON t.id=a.task_id
+WHERE a.id=?`, assignmentID).Scan(&info).Error; err != nil {
+			return err
+		}
+		payload := map[string]string{"title": info.TaskTitle, "student": info.StudentName}
+		if status == biz.AssignmentReturned {
+			payload["reason"] = returnReason
+		} else if score != nil {
+			payload["score"] = fmt.Sprintf("%.0f", *score)
+			payload["comment"] = comment
+		}
+		return enqueueDeliveries(tx, info.StudentID, kind,
+			"/pages/portal/tasks/detail?id="+assignmentID, payload)
+	})
 }
 
 func (r *TaskRepo) portalAssignments(ctx context.Context, guardianID, extra string, args ...any) ([]biz.TaskAssignment, error) {

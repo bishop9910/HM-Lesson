@@ -373,6 +373,14 @@ backend/
 - 模板 ID 通过配置注入（`WX_TEMPLATE_*`），禁止硬编码。
 - 长期订阅仅对特定类目开放，不能假设可无限推送（风险见 §11）。
 
+> **实现现状（2026-11-25 已落地，与上文早期计划的差异以此为准；决策见 ADR-029）**
+>
+> - 站内信与投递分离：`notifications`（000005）只存家长站内弹窗；投递队列是 `notification_deliveries`（000006），授权额度是 `subscription_grants`（早期计划里的 `wx_subscriptions`）。
+> - 模板配置为单个 JSON 环境变量 `HM_WX_SUBSCRIBE_TEMPLATES`（`task_published` / `task_reviewed` / `task_returned` → `{id, fields{模板关键词: 变量名}}`），另有 `HM_WX_TMPL_LANG`（默认 `zh_CN`）、`HM_WX_MP_STATE`（默认 `formal`）。未配置 AppID/Secret/模板时 sender 为 nil，整条链路 no-op，只发站内信。
+> - 消费：kratos `AfterStart` 起进程内 worker，30s 一轮；`SELECT ... FOR UPDATE` + `UPDATE status='sending'` 两段式抢占（MySQL 5.7 无 `SKIP LOCKED`）；退避 1/2/4 分钟（上限 10）、最多 3 次，永久错误直接 `failed`。
+> - 家长端「开启作业提醒」在门户页由用户点击触发 `wx.requestSubscribeMessage`，结果回传 `GET/POST /api/v1/portal/subscriptions`。
+> - 一期只实现家长侧 3 个模板；AF-01 的模板键实际为 `task_published`（下表 `task_assigned` 是早期命名），AF-02/05/06/07 及之后随 M4+ 再做。
+
 ### 6.3 自动化清单（对应蓝本 AF-01 ~ AF-15）
 
 | 编号 | 触发 | 实现 | 收件人 | 模板键 |
@@ -453,6 +461,13 @@ backend/
 ### 7.4 接口清单
 
 > 角色：`S`=老师，`G`=家长，`-`=公开。所有 `/portal/*` 仅 `G`；除注明外均为 `S`。
+>
+> **实现现状（2026-11-25）**：一期服务端是手写 HTTP/JSON handler（未生成 proto HTTP 层），路径与下表基本一致，已落地的差异如下（以代码与 [`HANDOVER.md`](../HANDOVER.md) §4 为准）：
+>
+> - 认证走 `POST /api/v1/auth/login`（教师）与 `POST /api/v1/auth/guardian/login`（家长手机号+可选绑定码），token 由 `X-HM-Token` 传递；`/api/v1/me` 未单独提供，用 `GET /api/v1/auth/me`。
+> - 家长不存在 `/auth/wx/login`；绑定申请是 `POST /api/v1/auth/bind-request` + 老师审批 `POST /api/v1/guardians/{id}/approve|reject`，或绑定码。
+> - 预约/课时接口已按 §7.4 落地：`/api/v1/slots*`、`/api/v1/bookings*`、`/api/v1/calendar/bookings`（目前与 `bookings` 同源，仅支持 `status/from/to`）、`/api/v1/portal/slots`、`/api/v1/portal/bookings*`、`/api/v1/lesson-accounts*`、`/api/v1/lesson-ledger`、`/api/v1/portal/lesson-account`。
+> - WebSocket（`/api/v1/ws/ticket`、`/ws`）**尚未实现**；预约通知 AF-07/08/09 也**尚未接入**（`notifications.guardian_id` 目前 NOT NULL，需迁移支持教师维度）。
 
 #### 认证与账号
 
@@ -634,8 +649,10 @@ auth:
 wx:
   app_id: ${HM_WX_APP_ID}
   app_secret: ${HM_WX_APP_SECRET}   # 仅订阅消息/code2session 兜底需要
-  template_ids:
-    task_assigned: ${HM_WX_TPL_TASK_ASSIGNED}
+  # 实际实现：单个 JSON 环境变量，模板关键词映射到变量名
+  subscribe_templates: ${HM_WX_SUBSCRIBE_TEMPLATES}
+  template_lang: ${HM_WX_TMPL_LANG}     # 默认 zh_CN
+  miniprogram_state: ${HM_WX_MP_STATE}  # 默认 formal
 rules:
   task_due_reminder_hours: 12
   booking_reminder_hours: 24
@@ -655,7 +672,8 @@ rules:
 | `HM_STORAGE_BUCKET` / `HM_STORAGE_REGION` | ✅（cloud） | 云托管对象存储桶与地域（上海） |
 | `HM_WX_APP_ID` | ✅ | 小程序 AppID |
 | `HM_WX_APP_SECRET` | ❌ | 仅订阅消息/兜底登录需要；callContainer 主路径不需要 |
-| `HM_WX_TPL_*` | ❌ | 订阅消息模板；未配置则只发站内信 |
+| `HM_WX_SUBSCRIBE_TEMPLATES` | ❌ | 订阅消息模板 JSON（`{key:{id,fields}}`）；未配置则只发站内信 |
+| `HM_WX_TMPL_LANG` / `HM_WX_MP_STATE` | ❌ | 模板语言（默认 `zh_CN`）/ 跳转版本（默认 `formal`） |
 | `HM_REDIS_ADDR` / `HM_REDIS_PASSWORD` | ❌ | 不配则禁用 Redis，限流/缓存走 DB + 进程内 |
 | `HM_HTTP_ADDR` | ❌ | 默认 `0.0.0.0:80` |
 | `HM_LOG_LEVEL` | ❌ | 默认 `info` |

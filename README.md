@@ -5,7 +5,7 @@
 - **业务蓝本**：[`docs/鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx`](<docs/鹤鸣老师课堂-飞书家校系统搭建需求与实施清单.docx>)（委托方原飞书零代码方案 V1.0，2026-11-17）
 - **技术路线**：**微信云托管（上海，单服务 `hm-api`）** ｜ Go Kratos v3 + **MySQL 5.7.18（本地容器 / 生产云托管）** + **生产 COS / 本地 MinIO** + 一期不用 Redis ｜ uni-app（Vue3 + TypeScript）微信小程序，**家长端与教师模式同一个小程序、按角色区分**
 - **域名**：小程序通过 `wx.cloud.callContainer` / `connectContainer` 直连云托管，**不需要服务器域名、不需要域名 ICP 备案**；当前没有域名备案也不影响上线。将来做 H5/Web/对外 API 时才需要已备案的自定义域名。
-- **当前状态**：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）**。backend 已接入 Kratos v3，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`data.Migrate` 启动版本化迁移、`/api/v1/dashboard/summary`、家长绑定申请，以及 M2 的学员档案（含标签/回访/分组编辑）/跟进/绑定审批/绑定码/guardian 登录/家长门户与学员详情/Excel 预览-提交-回滚接口，M3 的任务列表/新建/发布、逐份提交、批阅/打回、重交、统计、模板与家长任务/档案/站内通知接口；`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录。前端首页/工作台读取真实汇总，教师学员/跟进/审批/导入/任务/批阅页与家长登录/门户/任务/档案页已落盘，支持家长作业/批阅弹窗、拍照提交与教师批改图；`vue-tsc` 与 `mp-weixin` 构建通过。**已完成生产验证**：M2/M3 主链路、逾期提交、任务删除、站内通知与 `review_file_ids` 字段；**待真机验证**：相机拍摄/`wx.cloud.uploadFile` 与小程序弹窗点按。
+- **当前状态**：**M1 骨架 + 多老师认证 + 云托管首次部署 + M2 CRM/Excel 导入 + M3 任务主链路（2026-11-24）+ 微信订阅消息（2026-11-25）+ M4 一对一预约与课时（2026-11-25）**。backend 已接入 Kratos v3，完成手机号+密码登录、JWT、owner/assistant 成员管理、Argon2id、`data.Migrate` 启动版本化迁移、`/api/v1/dashboard/summary`、家长绑定申请，以及 M2 的学员档案（含标签/回访/分组编辑）/跟进/绑定审批/绑定码/guardian 登录/家长门户与学员详情/Excel 预览-提交-回滚接口，M3 的任务列表/新建/发布、逐份提交、批阅/打回、重交、统计、模板与家长任务/档案/站内通知接口；订阅消息（`000006`）已完成一次性额度、投递队列、进程内 worker（30s，退避重试 3 次）与家长门户「开启提醒」按钮，模板走 `HM_WX_SUBSCRIBE_TEMPLATES` 配置，未配置时整条链路 no-op；M4（`000007`）已完成教师时段（单条/按周批量/取消）、预约提交即锁时段（生成列唯一索引）、审核通过/驳回、完成消课（幂等）与未到课不扣课时、课时账户与只追加流水、家长「预约上课」页与课时余额/流水视图。`go build/vet/test` 通过，云托管已连接 MySQL 5.7.18 实测迁移、健康检查与 owner 登录。前端首页/工作台读取真实汇总，教师学员/跟进/审批/导入/任务/批阅/时段/预约审核/课时页与家长登录/门户/任务/档案/预约页已落盘，支持家长作业/批阅弹窗、拍照提交与教师批改图；`vue-tsc` 与 `mp-weixin` 构建通过。**已完成生产验证**：M2/M3 主链路、逾期提交、任务删除、站内通知与 `review_file_ids` 字段；**待部署验证**：`000006`/`000007` 在真实 MySQL 5.7 上的 up/down；**待真机验证**：相机拍摄/`wx.cloud.uploadFile`、小程序弹窗点按、订阅消息服务通知（需先配置模板 ID）与预约/课时全链路。
 
 ---
 
@@ -295,13 +295,15 @@ CI 门禁：`lint + typecheck + unit + integration + build` 全绿才允许合�
 | 文档 | 读者 | 内容 |
 | --- | --- | --- |
 | [AGENTS.md](AGENTS.md) | AI / 开发者 | 硬性规范、命令、禁区、DoD |
+| [TODO.md](TODO.md) | 所有人 | 待办、优先级、订阅消息实现清单、已知缺口 |
+| [HANDOVER.md](HANDOVER.md) | 下一个接手的 Agent | 快速上手、代码地图、接口、踩坑、下一个任务设计 |
 | [docs/backend-requirements.md](docs/backend-requirements.md) | 后端 | 模块规则、权限、接口、任务、非功能、测试 |
 | [docs/data-model.md](docs/data-model.md) | 后端 | ER、表、索引、约束、迁移与种子 |
 | [docs/frontend-requirements.md](docs/frontend-requirements.md) | 前端 | 家长端 + 教师模式页面、交互、设计系统、微信限制、验收 |
 | [docs/deploy-wechat-cloudrun.md](docs/deploy-wechat-cloudrun.md) | 运维 / 后端 | 云托管开通、数据库、COS、环境变量、迁移、CI、域名、排查 |
-| [docs/decisions.md](docs/decisions.md) | 后端 / 架构 | 27 条架构决策与回滚方式 |
+| [docs/decisions.md](docs/decisions.md) | 后端 / 架构 | 28 条架构决策与回滚方式 |
 | [docs/open-questions.md](docs/open-questions.md) | 委托方 | Q1–Q28 已确认；Q19 需控制台试开通、提审 |
-| [docs/test-report.md](docs/test-report.md) | 测试 / 开发 | 自动化与 TC-01~17 手工验收记录（当前未开始） |
+| [docs/test-report.md](docs/test-report.md) | 测试 / 开发 | 自动化与 TC-01~17 验收记录（已完成 M1–M3 生产记录） |
 
 ## 15. 约定
 

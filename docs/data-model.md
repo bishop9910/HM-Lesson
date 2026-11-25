@@ -329,94 +329,78 @@ erDiagram
 
 ### 3.4 预约与课时
 
+> 实现现状（2026-11-25，迁移 `backend/migrations/000007_booking_lesson.up.sql`）：四张表已按 MySQL 5.7.18 方言落盘。PostgreSQL 的 `EXCLUDE`/部分唯一索引在 5.7 不可用，改为「生成列 + 唯一索引」与事务内 `SELECT ... FOR UPDATE`（ADR-011）；`CHECK` 在 5.7 只解析不生效，枚举与范围仍由 Go 侧校验（§1.1）。
+
 #### `slots`
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| id | uuid | PK | |
-| staff_id | uuid | NOT NULL FK staff(id) | |
-| start_at | timestamptz | NOT NULL | |
-| end_at | timestamptz | NOT NULL, CHECK end_at > start_at | |
-| status | text | NOT NULL DEFAULT 'open', CHECK IN ('open','locked','completed','cancelled') | |
-| note | text | NULL | |
-| created_at / updated_at | timestamptz | NOT NULL DEFAULT now() | |
+| id | char(36) | PK | |
+| staff_id | char(36) | NOT NULL FK fk_slots_staff → staff(id) | |
+| start_at / end_at | datetime(3) | NOT NULL | UTC |
+| status | varchar(16) | NOT NULL DEFAULT 'open' | `open`/`locked`/`completed`/`cancelled` |
+| note | varchar(200) | NOT NULL DEFAULT '' | 备注 |
+| created_at / updated_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
 
-约束：
-
-```sql
--- 同一老师时段不重叠（取消的除外）
-ALTER TABLE slots ADD CONSTRAINT ex_slots_no_overlap
-  EXCLUDE USING gist (
-    staff_id WITH =,
-    tstzrange(start_at, end_at, '[)') WITH &&
-  ) WHERE (status <> 'cancelled');
-```
-
-索引：`idx_slots_status_start (status, start_at)`。
+约束：同一老师的时段不重叠由应用层在同一事务内 `SELECT ... FOR UPDATE` + 区间相交校验完成（`ensureNoOverlap`），MySQL 5.7 无 `EXCLUDE` 约束。
+索引：`idx_slots_staff_start (staff_id, start_at)`、`idx_slots_status_start (status, start_at)`。
 
 #### `bookings`
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| id | uuid | PK | |
-| slot_id | uuid | NOT NULL FK slots(id) | |
-| student_id | uuid | NOT NULL FK students(id) | |
-| guardian_id | uuid | NOT NULL FK guardians(id) | |
-| status | text | NOT NULL DEFAULT 'pending', CHECK IN ('pending','approved','rejected','completed','cancelled','no_show') | |
-| request_note | text | NULL | 诉求 |
-| review_note | text | NULL | 审核意见/驳回理由 |
-| submitted_at | timestamptz | NOT NULL DEFAULT now() | |
-| reviewed_at | timestamptz | NULL | |
-| reviewed_by | uuid | NULL FK staff(id) | |
-| completed_at | timestamptz | NULL | |
-| attendance | text | NULL, CHECK IN ('attended','no_show') | |
-| lesson_ledger_id | uuid | NULL FK lesson_ledger(id) | 消课流水 |
-| cancel_reason | text | NULL | |
-| version | int | NOT NULL DEFAULT 1 | |
+| id | char(36) | PK | |
+| slot_id | char(36) | NOT NULL FK → slots(id) | |
+| student_id | char(36) | NOT NULL FK → students(id) | |
+| guardian_id | char(36) | NOT NULL FK → guardians(id) | |
+| status | varchar(16) | NOT NULL DEFAULT 'pending' | `pending`/`approved`/`rejected`/`completed`/`cancelled`/`no_show` |
+| request_note | varchar(500) | NOT NULL DEFAULT '' | 诉求 |
+| review_note | varchar(500) | NOT NULL DEFAULT '' | 审核意见/驳回理由 |
+| cancel_reason | varchar(200) | NOT NULL DEFAULT '' | |
+| attendance | varchar(16) | NULL | `attended`/`no_show`/`leave` |
+| lesson_ledger_id | char(36) | NULL | 消课流水 |
+| submitted_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
+| reviewed_at / reviewed_by | datetime(3) / char(36) | NULL | |
+| completed_at | datetime(3) | NULL | |
+| created_at / updated_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
+| active_flag | tinyint | 生成列 STORED | `CASE WHEN status IN ('pending','approved') THEN 1 ELSE NULL END` |
 
-约束（TC-08 的数据库兜底）：
-
-```sql
-CREATE UNIQUE INDEX uq_bookings_active_slot
-  ON bookings (slot_id)
-  WHERE status IN ('pending','approved');
-```
-
-索引：`idx_bookings_student (student_id, submitted_at DESC)`、`idx_bookings_status (status, submitted_at)`。
+约束（TC-08 的数据库兜底）：`UNIQUE KEY uq_bookings_active_slot (slot_id, active_flag)` —— NULL 不参与唯一性，同一时段只能有一条有效预约。
+索引：`idx_bookings_student (submitted_at)`、`idx_bookings_guardian (guardian_id)`、`idx_bookings_status (status)`。
 
 #### `lesson_accounts`
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| student_id | uuid | PK, FK students(id) | 1:1 |
-| purchased_hours | numeric(6,2) | NOT NULL DEFAULT 0, CHECK >= 0 | 累计购买 |
-| used_hours | numeric(6,2) | NOT NULL DEFAULT 0, CHECK >= 0 | 累计消耗 |
-| balance_hours | numeric(6,2) | NOT NULL DEFAULT 0, CHECK >= 0 | 缓存余额（对账） |
-| status | text | NOT NULL DEFAULT 'active', CHECK IN ('active','exhausted','expired') | |
-| valid_until | date | NULL | |
-| version | int | NOT NULL DEFAULT 1 | |
-| updated_at | timestamptz | NOT NULL DEFAULT now() | |
+| student_id | char(36) | PK, FK fk_lesson_accounts_student | 1:1 |
+| purchased_hours | decimal(6,2) | NOT NULL DEFAULT 0 | 累计购买 |
+| used_hours | decimal(6,2) | NOT NULL DEFAULT 0 | 累计消耗 |
+| balance_hours | decimal(6,2) | NOT NULL DEFAULT 0 | 缓存余额（不变量 `balance = purchased - used`） |
+| valid_until | datetime(3) | NULL | |
+| status | varchar(16) | NOT NULL DEFAULT 'active' | `active`/`exhausted`/`expired` |
+| created_at / updated_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
 
-> `balance_hours` 不是“可手工改的余额”，而是流水汇总的缓存；任何变更必须同事务写 `lesson_ledger`。日对账校验 `balance_hours = SUM(delta_hours)`。
+> `balance_hours` 不是“可手工改的余额”，而是流水汇总的缓存；任何变更必须同事务写 `lesson_ledger`（ADR-012）。日对账校验 `balance_hours = SUM(delta_hours)`。
 
 #### `lesson_ledger`
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| id | uuid | PK | |
-| student_id | uuid | NOT NULL FK students(id) | |
-| type | text | NOT NULL, CHECK IN ('purchase','consume','adjust','refund') | |
-| delta_hours | numeric(6,2) | NOT NULL, CHECK (delta_hours <> 0) | 有符号 |
-| balance_after | numeric(6,2) | NOT NULL, CHECK >= 0 | 记账后余额 |
-| ref_type | text | NULL, CHECK IN ('booking','manual','order') | |
-| ref_id | uuid | NULL | |
-| reason | text | NULL | adjust 必填（应用校验） |
-| operator_id | uuid | NOT NULL FK staff(id) | |
-| occurred_at | timestamptz | NOT NULL DEFAULT now() | |
-| created_at | timestamptz | NOT NULL DEFAULT now() | |
+| id | char(36) | PK | |
+| student_id | char(36) | NOT NULL FK → students(id) | |
+| type | varchar(16) | NOT NULL | `purchase`/`consume`/`adjust`/`refund` |
+| delta_hours | decimal(6,2) | NOT NULL | 有符号 |
+| balance_after | decimal(6,2) | NOT NULL | 记账后余额 |
+| ref_type | varchar(16) | NULL | `booking`/`manual`/`order` |
+| ref_id | char(36) | NULL | |
+| reason | varchar(200) | NOT NULL DEFAULT '' | adjust 必填（应用校验） |
+| operator_id | char(36) | NOT NULL FK → staff(id) | |
+| occurred_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
+| created_at | datetime(3) | NULL | |
+| consume_ref_id | char(36) | 生成列 | `CASE WHEN type='consume' THEN ref_id ELSE NULL END` |
 
-约束：`CREATE UNIQUE INDEX uq_ledger_consume_booking ON lesson_ledger (ref_id) WHERE type='consume' AND ref_type='booking';` —— 保证同一预约只扣一次。
-索引：`idx_ledger_student_time (student_id, occurred_at DESC)`。
+约束：`UNIQUE KEY uq_lesson_ledger_consume (consume_ref_id)` —— 5.7 无部分索引，用生成列达到“同一预约只扣一次”的效果；冲突时代码回查既有流水（幂等）。
+索引：`idx_lesson_ledger_student (occurred_at)`、`idx_lesson_ledger_ref (ref_type, ref_id)`。
 
 ### 3.5 班课
 
@@ -520,31 +504,39 @@ CREATE UNIQUE INDEX uq_bookings_active_slot
 
 索引：`idx_notifications_guardian_read (guardian_id, read_at, created_at)`、`idx_notifications_ref (ref_type, ref_id)`。
 
-#### `notifications`（规划中的投递队列，未建）
+#### `notification_deliveries`（实际：微信订阅消息投递队列；000006）
+
+> 与 `notifications`（站内弹窗）互补：同一业务事件既写站内通知，也可能在 `subscription_grants.remaining > 0` 时写一条投递记录。入队与业务写操作在同一事务内完成。
 
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| id | uuid | PK | |
-| recipient_type | text | CHECK IN ('staff','guardian') | |
-| recipient_id | uuid | NOT NULL | |
-| channel | text | CHECK IN ('wx_subscribe','inapp','ws') | |
-| template_key | varchar(64) | NOT NULL | 见后端 §6.3 |
-| title | varchar(200) | NULL | 站内信展示 |
-| payload | jsonb | NOT NULL DEFAULT '{}' | 变量 |
-| status | text | NOT NULL DEFAULT 'queued', CHECK IN ('queued','sending','sent','failed','skipped') | |
-| scheduled_at | timestamptz | NOT NULL DEFAULT now() | |
-| attempts | int | NOT NULL DEFAULT 0 | |
-| last_error | text | NULL | |
-| dedupe_key | varchar(160) | NOT NULL | 幂等 |
-| sent_at | timestamptz | NULL | |
-| read_at | timestamptz | NULL | 站内信已读 |
-| created_at | timestamptz | NOT NULL DEFAULT now() | |
+| id | char(36) | PK | UUIDv7 |
+| guardian_id | char(36) | NOT NULL FK guardians(id) | 收件家长 |
+| template_key | varchar(32) | NOT NULL | `task_published/task_reviewed/task_returned` |
+| page | varchar(128) | NOT NULL DEFAULT '' | 小程序跳转路径（需 URL 编码） |
+| payload | json | NULL | 文案变量快照：`title/student/date/due_at/score` |
+| status | varchar(16) | NOT NULL DEFAULT 'pending' | `pending/sending/sent/failed/skipped` |
+| attempts | int | NOT NULL DEFAULT 0 | 已尝试次数，上限 3 |
+| next_attempt_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | 下次可发送时间（1/3/10 分钟退避） |
+| last_error | varchar(500) | NOT NULL DEFAULT '' | 最近一次错误 |
+| sent_at | datetime(3) | NULL | 发送成功时间 |
+| created_at / updated_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
 
-约束：`UNIQUE (dedupe_key)`；索引 `idx_notifications_due (status, scheduled_at)`、`idx_notifications_recipient (recipient_type, recipient_id, created_at DESC)`。
+索引：`idx_notification_deliveries_status_next (status, next_attempt_at)`（worker 取件）、`idx_notification_deliveries_guardian (guardian_id, created_at)`（家长维度排查）。
 
-#### `wx_subscriptions`
+#### `subscription_grants`（实际：一次性订阅额度；000006）
 
-`guardian_id uuid`、`template_key varchar(64)`、`remaining int NOT NULL DEFAULT 0 CHECK >= 0`、`updated_at`；PK `(guardian_id, template_key)`。
+| 列 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| id | char(36) | PK | |
+| guardian_id | char(36) | NOT NULL FK guardians(id) | |
+| template_key | varchar(32) | NOT NULL | `task_published/task_reviewed/task_returned` |
+| remaining | int | NOT NULL DEFAULT 0 | 剩余可发次数：用户 accept 一次 +1，发送成功 -1 |
+| last_requested_at | datetime(3) | NULL | 最近一次授权时间 |
+| created_at / updated_at | datetime(3) | NOT NULL DEFAULT CURRENT_TIMESTAMP(3) | |
+
+约束：`UNIQUE uq_subscription_grants_guardian_template (guardian_id, template_key)`；额度上限 3（避免一次点按累积过多）。
+注意：MySQL 5.7 会解析但忽略 `CHECK`，`remaining >= 0` 与 `status/template_key` 取值由 Go 侧（biz）再校验一遍。
 
 #### `files`
 
@@ -638,7 +630,7 @@ stateDiagram-v2
 | 待审核预约 | `bookings(status, submitted_at)` |
 | 日历 | `slots(status, start_at)`、`bookings(slot_id)` |
 | 课时流水 | `lesson_ledger(student_id, occurred_at DESC)` |
-| 通知投递 | `notifications(status, scheduled_at)` |
+| 通知投递 | `notification_deliveries(status, next_attempt_at)` |
 | 回执统计 | `notice_receipts(notice_id, status)` |
 | 看板客户结构 | `students(group_code, status)` |
 | 审计追溯 | `audit_logs(target_type, target_id, created_at DESC)` |

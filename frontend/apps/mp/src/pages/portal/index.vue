@@ -26,9 +26,29 @@ interface NotificationItem {
   ref_id: string;
 }
 
+interface SubscriptionItem {
+  template_key: string;
+  template_id: string;
+  remaining: number;
+  configured: boolean;
+}
+interface WxSubscribeResult {
+  errMsg?: string;
+  [templateID: string]: unknown;
+}
+interface WxSubscribeApi {
+  requestSubscribeMessage(options: {
+    tmplIds: string[];
+    success?: (res: WxSubscribeResult) => void;
+    fail?: (err: { errMsg?: string }) => void;
+  }): void;
+}
+
 const home = ref<Home | null>(null);
 const loading = ref(false);
 const errorText = ref("");
+const subscriptions = ref<SubscriptionItem[]>([]);
+const subscribing = ref(false);
 
 const groupLabels: Record<string, string> = {
   class_active: "班课在读",
@@ -89,7 +109,84 @@ async function loadNotifications(): Promise<void> {
 onShow(() => {
   void load();
   void loadNotifications();
+  void loadSubscriptions();
 });
+
+const reminderRemaining = computed(() =>
+  subscriptions.value.reduce((sum, item) => sum + (item.configured ? item.remaining : 0), 0),
+);
+const reminderAvailable = computed(() => subscriptions.value.some((item) => item.configured && item.template_id));
+
+async function loadSubscriptions(): Promise<void> {
+  if (!uni.getStorageSync("hm_guardian_token")) return;
+  try {
+    const res = await request<{ items: SubscriptionItem[]; enabled: boolean }>(
+      "/api/v1/portal/subscriptions",
+      "GET",
+      undefined,
+      "guardian",
+    );
+    subscriptions.value = res.items || [];
+  } catch {
+    // 订阅能力属于增强项，失败不打断门户
+  }
+}
+
+function normalizeState(value: unknown): string {
+  return typeof value === "string" ? value : "unknown";
+}
+
+function enableReminders(): void {
+  if (subscribing.value) return;
+  const configured = subscriptions.value.filter((item) => item.configured && item.template_id);
+  if (configured.length === 0) {
+    uni.showToast({ title: "老师还没有配置提醒模板", icon: "none" });
+    return;
+  }
+  const wxApi = (globalThis as unknown as { wx?: WxSubscribeApi }).wx;
+  if (!wxApi || typeof wxApi.requestSubscribeMessage !== "function") {
+    uni.showToast({ title: "请在小程序里开启提醒", icon: "none" });
+    return;
+  }
+  subscribing.value = true;
+  wxApi.requestSubscribeMessage({
+    tmplIds: configured.map((item) => item.template_id),
+    success: (res) => {
+      void submitGrants(configured, res);
+    },
+    fail: (err) => {
+      subscribing.value = false;
+      const cancelled = (err?.errMsg || "").includes("cancel");
+      uni.showToast({ title: cancelled ? "已取消" : "开启失败，请稍后再试", icon: "none" });
+    },
+  });
+}
+
+async function submitGrants(configured: SubscriptionItem[], res: WxSubscribeResult): Promise<void> {
+  const grants = configured
+    .map((item) => ({ template_key: item.template_key, state: normalizeState(res[item.template_id]) }))
+    .filter((grant) => grant.state !== "unknown");
+  if (grants.length === 0) {
+    subscribing.value = false;
+    uni.showToast({ title: "未开启提醒", icon: "none" });
+    return;
+  }
+  try {
+    const out = await request<{ items: SubscriptionItem[] }>(
+      "/api/v1/portal/subscriptions",
+      "POST",
+      { grants },
+      "guardian",
+    );
+    if (out.items && out.items.length > 0) subscriptions.value = out.items;
+    const accepted = grants.filter((grant) => grant.state === "accept").length;
+    uni.showToast({ title: accepted > 0 ? `已开启 ${accepted} 项提醒` : "未开启提醒", icon: "none" });
+  } catch (err) {
+    uni.showToast({ title: err instanceof ApiError ? err.message : "开启失败", icon: "none" });
+  } finally {
+    subscribing.value = false;
+  }
+}
 
 function logout(): void {
   uni.removeStorageSync("hm_guardian_token");
@@ -111,6 +208,10 @@ function goTasks(): void {
 
 function goArchive(): void {
   uni.navigateTo({ url: "/pages/portal/archive" });
+}
+
+function goBooking(): void {
+  uni.navigateTo({ url: "/pages/portal/booking" });
 }
 </script>
 
@@ -143,6 +244,20 @@ function goArchive(): void {
         </view>
       </view>
 
+      <view v-if="reminderAvailable" class="reminder">
+        <view class="reminder-text">
+          <text class="reminder-title">作业提醒</text>
+          <text class="reminder-hint">{{
+            reminderRemaining > 0
+              ? `已开启 ${reminderRemaining} 次微信提醒`
+              : "开启后作业发布、批改会收到微信服务通知"
+          }}</text>
+        </view>
+        <button class="reminder-btn" :disabled="subscribing" :loading="subscribing" @click="enableReminders">
+          {{ reminderRemaining > 0 ? "再开一次" : "开启提醒" }}
+        </button>
+      </view>
+
       <view v-if="!home.students.length" class="empty">
         <text class="empty-title">还没有关联学员</text>
         <text class="empty-hint">请让老师通过你的绑定申请。</text>
@@ -158,6 +273,7 @@ function goArchive(): void {
 
       <view class="quick">
         <button class="ghost" @click="goTasks">我的任务</button>
+        <button class="ghost" @click="goBooking">预约上课</button>
         <button class="ghost" @click="goArchive">作业档案</button>
       </view>
 
@@ -270,6 +386,46 @@ function goArchive(): void {
   margin-top: 8rpx;
   font-size: 24rpx;
   color: $hm-muted;
+}
+
+.reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding: 24rpx;
+  border-radius: $hm-radius;
+  background: $hm-surface;
+  border: 1rpx solid $hm-border;
+}
+
+.reminder-text {
+  flex: 1;
+  margin-right: 20rpx;
+}
+
+.reminder-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.reminder-hint {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: $hm-muted;
+}
+
+.reminder-btn {
+  min-width: 180rpx;
+  height: 64rpx;
+  padding: 0 24rpx;
+  line-height: 64rpx;
+  border-radius: 32rpx;
+  font-size: 24rpx;
+  color: #ffffff;
+  background: $hm-primary;
 }
 
 .empty {

@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS lesson_ledger;
+DROP TABLE IF EXISTS lesson_accounts;
+DROP TABLE IF EXISTS bookings;
+DROP TABLE IF EXISTS slots;

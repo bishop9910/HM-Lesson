@@ -89,3 +89,30 @@ func TestExplicitDSNWins(t *testing.T) {
 		t.Fatalf("DBDSN = %q", got)
 	}
 }
+
+func TestParseSubscribeTemplates(t *testing.T) {
+	tpls, err := ParseSubscribeTemplates("")
+	if err != nil || tpls != nil {
+		t.Fatalf("空配置应返回 nil/nil，得到 %v/%v", tpls, err)
+	}
+
+	raw := `{"task_published":{"id":"tmpl-1","fields":{"thing1":"title","time2":"due_at"}}}`
+	tpls, err = ParseSubscribeTemplates(raw)
+	if err != nil {
+		t.Fatalf("ParseSubscribeTemplates: %v", err)
+	}
+	if got := tpls["task_published"]; got.ID != "tmpl-1" || got.Fields["thing1"] != "title" || got.Fields["time2"] != "due_at" {
+		t.Fatalf("模板解析错误: %+v", got)
+	}
+
+	badCases := []string{
+		`not-json`,
+		`{"task_published":{"fields":{"thing1":"title"}}}`,
+		`{"task_published":{"id":"tmpl-1"}}`,
+	}
+	for _, in := range badCases {
+		if _, err := ParseSubscribeTemplates(in); err == nil {
+			t.Fatalf("期望报错: %s", in)
+		}
+	}
+}

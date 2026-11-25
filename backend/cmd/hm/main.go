@@ -19,6 +19,7 @@ import (
 	"github.com/bishop9910/hm-lesson/backend/internal/version"
 	"github.com/bishop9910/hm-lesson/backend/pkg/password"
 	"github.com/bishop9910/hm-lesson/backend/pkg/token"
+	"github.com/bishop9910/hm-lesson/backend/pkg/wx"
 )
 
 func main() {
@@ -26,7 +27,7 @@ func main() {
 	logger := newLogger(cfg.LogLevel())
 	slog.SetDefault(logger)
 
-	authSrv, db := buildServices(cfg, logger)
+	authSrv, subs, db := buildServices(cfg, logger)
 
 	srv := khttp.NewServer(
 		khttp.Address(cfg.HTTPAddr),
@@ -106,11 +107,49 @@ func main() {
 	router.POST("/api/v1/portal/tasks/{id}/submit", authSrv.PortalSubmit)
 	router.GET("/api/v1/portal/archive", authSrv.PortalArchive)
 
+	// M3 增强：微信订阅消息（一次性订阅授权 + 进程内投递）。
+	router.GET("/api/v1/portal/subscriptions", authSrv.PortalSubscriptions)
+	router.POST("/api/v1/portal/subscriptions", authSrv.GrantSubscriptions)
+
+	// M4 一对一预约排课：时段与预约（教师端）。
+	router.GET("/api/v1/slots", authSrv.ListSlots)
+	router.POST("/api/v1/slots", authSrv.CreateSlot)
+	router.POST("/api/v1/slots/batch", authSrv.BatchSlots)
+	router.PATCH("/api/v1/slots/{id}", authSrv.UpdateSlot)
+	router.DELETE("/api/v1/slots/{id}", authSrv.CancelSlot)
+	router.GET("/api/v1/bookings", authSrv.ListBookings)
+	router.POST("/api/v1/bookings/{id}/approve", authSrv.ApproveBooking)
+	router.POST("/api/v1/bookings/{id}/reject", authSrv.RejectBooking)
+	router.POST("/api/v1/bookings/{id}/complete", authSrv.CompleteBooking)
+	router.POST("/api/v1/bookings/{id}/no-show", authSrv.NoShowBooking)
+	router.GET("/api/v1/calendar/bookings", authSrv.CalendarBookings)
+
+	// M4 家长端预约。
+	router.GET("/api/v1/portal/slots", authSrv.PortalSlots)
+	router.GET("/api/v1/portal/bookings", authSrv.PortalBookings)
+	router.POST("/api/v1/portal/bookings", authSrv.PortalCreateBooking)
+	router.POST("/api/v1/portal/bookings/{id}/cancel", authSrv.PortalCancelBooking)
+
+	// M4 课时台账。
+	router.GET("/api/v1/lesson-accounts", authSrv.ListLessonAccounts)
+	router.GET("/api/v1/lesson-accounts/{studentID}", authSrv.GetLessonAccount)
+	router.POST("/api/v1/lesson-accounts/{studentID}/purchase", authSrv.PurchaseLessonHours)
+	router.POST("/api/v1/lesson-accounts/{studentID}/adjust", authSrv.AdjustLessonHours)
+	router.GET("/api/v1/lesson-ledger", authSrv.ListLessonLedger)
+	router.GET("/api/v1/portal/lesson-account", authSrv.PortalLessonAccount)
+
 	app := kratos.New(
 		kratos.Name("hm-api"),
 		kratos.Version(version.Version),
 		kratos.Logger(logger),
 		kratos.Server(srv),
+		// 订阅消息 worker 跟随应用生命周期：AfterStart 起 goroutine，Stop 取消 ctx 后退出。
+		kratos.AfterStart(func(ctx context.Context) error {
+			if subs != nil {
+				go subs.RunWorker(ctx)
+			}
+			return nil
+		}),
 	)
 	if err := app.Run(); err != nil {
 		logger.Error("server stopped", "error", err)
@@ -118,10 +157,10 @@ func main() {
 	}
 }
 
-func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm.DB) {
+func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.SubscriptionUsecase, *gorm.DB) {
 	if cfg.DBDSN == "" {
 		logger.Warn("HM_DB_DSN 未配置，仅健康检查可用；登录/成员接口返回 503")
-		return service.New(nil, nil, nil, nil, nil, nil, nil), nil
+		return service.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil
 	}
 	db, err := data.Open(cfg.DBDSN)
 	if err != nil {
@@ -155,7 +194,52 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *gorm
 	crm := biz.NewCRMUsecase(data.NewCRMRepo(db))
 	importUC := biz.NewImportUsecase(data.NewImportRepo(db))
 	tasks := biz.NewTaskUsecase(data.NewTaskRepo(db))
-	return service.New(uc, dashboard, bind, crm, importUC, tasks, issuer), db
+	subs := buildSubscriptions(cfg, db, logger)
+	bookings := biz.NewBookingUsecase(data.NewBookingRepo(db), cfg.LessonHoursPerSession)
+	lessons := biz.NewLessonUsecase(data.NewLessonRepo(db))
+	return service.New(uc, dashboard, bind, crm, importUC, tasks, subs, bookings, lessons, issuer), subs, db
+}
+
+// buildSubscriptions 组装一次性订阅消息用例。
+// 模板来自 HM_WX_SUBSCRIBE_TEMPLATES；缺 AppID/AppSecret 或模板时 sender 为 nil，整条链路 no-op。
+func buildSubscriptions(cfg conf.Config, db *gorm.DB, logger *slog.Logger) *biz.SubscriptionUsecase {
+	parsed, err := conf.ParseSubscribeTemplates(cfg.WXSubscribeTemplates)
+	if err != nil {
+		logger.Warn("订阅消息模板配置无效，微信订阅消息不会发送", "error", err)
+		parsed = nil
+	}
+	templates := make(map[string]biz.SubscribeTemplate, len(parsed))
+	for key, tpl := range parsed {
+		if !biz.IsTemplateKey(key) {
+			logger.Warn("忽略未知订阅消息模板键", "template_key", key)
+			continue
+		}
+		templates[key] = biz.SubscribeTemplate{ID: tpl.ID, Fields: tpl.Fields}
+	}
+	var sender biz.SubscribeSender
+	if cfg.WXAppID != "" && cfg.WXAppSecret != "" && len(templates) > 0 {
+		sender = wxSubscribeSender{client: wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)}
+	} else {
+		logger.Info("微信订阅消息未启用：需要 HM_WX_APP_ID、HM_WX_APP_SECRET 与 HM_WX_SUBSCRIBE_TEMPLATES；家长仍可在小程序内看到站内通知")
+	}
+	return biz.NewSubscriptionUsecase(data.NewSubscriptionRepo(db), sender, templates, cfg.WXMiniprogramState, logger)
+}
+
+// wxSubscribeSender 把 pkg/wx 适配成 biz.SubscribeSender；retryable=false 表示重试无意义。
+type wxSubscribeSender struct{ client *wx.Client }
+
+func (s wxSubscribeSender) SendSubscribe(ctx context.Context, msg biz.SubscribeMessage) (bool, error) {
+	err := s.client.SendSubscribe(ctx, wx.SubscribeMessage{
+		ToUser:           msg.OpenID,
+		TemplateID:       msg.TemplateID,
+		Page:             msg.Page,
+		MiniprogramState: msg.MiniprogramState,
+		Data:             msg.Data,
+	})
+	if err == nil {
+		return false, nil
+	}
+	return !wx.IsPermanent(err), err
 }
 
 func newLogger(level slog.Level) *slog.Logger {

@@ -198,8 +198,11 @@ const res = await wx.cloud.uploadFile({
 | `HM_JWT_SECRET` | 随机 32+ 字节 | 家长/教师 token 签名 |
 | `HM_WX_APP_ID` | `wx...` | 小程序 AppID |
 | `HM_WX_APP_SECRET` | `...` | 仅订阅消息、`code2session` 兜底；callContainer 主路径不需要，能不用就不配 |
-| `HM_WX_TPL_*` | `...` | 订阅消息模板 ID；未配置则只发站内信 |
+| `HM_WX_SUBSCRIBE_TEMPLATES` | 见 §7.1 | 订阅消息模板 JSON；**未配置则整条链路 no-op**，只发站内信 |
+| `HM_WX_TMPL_LANG` | `zh_CN` | 模板语言，可选，默认 `zh_CN` |
+| `HM_WX_MP_STATE` | `formal` | `miniprogram_state`；联调可用 `trial` / `developer`，默认 `formal` |
 | `HM_STORAGE_DRIVER` | `cloud` / `minio` | 有 `COS_BUCKET` 时默认 `cloud` |
+| `HM_LESSON_HOURS_PER_SESSION` | `1` | 单次一对一课扣减课时数（`float`，≤0 时回退 1）；班课不扣课时 |
 | `HM_STORAGE_BUCKET` | `...` | 可选；缺省用 `COS_BUCKET` |
 | `HM_STORAGE_REGION` | `ap-shanghai` | 可选；缺省用 `COS_REGION` |
 | `COS_BUCKET` | `hm-125...` | 云托管注入；COS 桶名 |
@@ -212,6 +215,26 @@ const res = await wx.cloud.uploadFile({
 | `HM_BOOTSTRAP_PASSWORD` | 强密码 | 首个 owner 密码（≥8）；创建后删除并改密 |
 
 > 云托管自动注入 `CBR_ENV_ID`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_ADDRESS`、`COS_BUCKET`、`COS_REGION`。后端 `internal/conf.buildDSN()` 已做兼容：`HM_DB_DSN` 为空时用 `MYSQL_*` 拼 DSN；存储配置缺省时用 `COS_*`。**不要**把这些值再硬编码进 Dockerfile 或仓库。
+
+### 7.1 微信订阅消息（一次性订阅）
+
+小程序端点“开启提醒”会调用 `wx.requestSubscribeMessage`，家长 accept 一次服务端就多一条可发送额度；额度不足时不发微信通知，只留站内弹窗。**未配置模板时后端整条链路 no-op，业务接口不报错。**
+
+模板 ID 需要在微信公众平台「订阅消息 → 公共模板库/我的模板」里选好后填入，后端不猜测关键词：
+
+```json
+{
+  "task_published": { "id": "模板ID1", "fields": { "thing1": "title", "time2": "due_at" } },
+  "task_reviewed":  { "id": "模板ID2", "fields": { "thing1": "title", "number2": "score" } },
+  "task_returned":  { "id": "模板ID3", "fields": { "thing1": "title", "thing2": "student" } }
+}
+```
+
+- 键固定为 `task_published` / `task_reviewed` / `task_returned`，其它键会在启动时被忽略并打 warn 日志。
+- `fields` 是「模板关键词 → 变量名」的映射；可用变量：`title`（任务标题）、`student`（学员姓名）、`date`（发布日期）、`due_at`（截止时间）、`score`（得分）。
+- 关键词类型前缀决定截断长度（`thing`≤20、`phrase`≤5、`name`≤10、`number`/`date`/`time` 不截断），服务端渲染时统一截断，避免 47003。
+- 云托管环境变量里 JSON 建议压成一行；改完环境变量**必须重新构建/发布版本**才会生效（只改变量不重建不会更新镜像里的代码）。
+- 发送由进程内 worker 每 30 秒取一次 `notification_deliveries`，失败按 1/2/4 分钟退避（上限 10 分钟）重试，最多 3 次；永久错误（43101 用户拒收、47003 参数错等）直接置 `failed` 不重试。
 
 ---
 

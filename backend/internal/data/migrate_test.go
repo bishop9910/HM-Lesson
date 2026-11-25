@@ -7,8 +7,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(all) != 5 {
-		t.Fatalf("want 5 migrations, got %d", len(all))
+	if len(all) != 7 {
+		t.Fatalf("want 7 migrations, got %d", len(all))
 	}
 	if all[0].version != 1 || all[0].name != "init" {
 		t.Fatalf("unexpected first migration: %+v", all[0])
@@ -18,6 +18,12 @@ func TestLoadMigrations(t *testing.T) {
 	}
 	if all[2].version != 3 || all[2].name != "import_batch" {
 		t.Fatalf("unexpected third migration: %+v", all[2])
+	}
+	if all[5].version != 6 || all[5].name != "subscription_messages" {
+		t.Fatalf("unexpected sixth migration: %+v", all[5])
+	}
+	if all[6].version != 7 || all[6].name != "booking_lesson" {
+		t.Fatalf("unexpected seventh migration: %+v", all[6])
 	}
 	for _, m := range all {
 		if len(m.up) == 0 || len(m.down) == 0 {

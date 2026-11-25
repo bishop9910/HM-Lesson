@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -375,6 +376,12 @@ func (s *Server) GuardianLogin(ctx khttp.Context) error {
 	if len(students) == 0 {
 		if home, herr := s.crm.PortalHome(ctx, guardian.ID); herr == nil {
 			students = home.Students
+		}
+	}
+	// 采集网关注入的 openid（X-WX-SOURCE 缺失时忽略），供订阅消息投递使用；失败不阻断登录。
+	if openid := gatewayOpenID(ctx); openid != "" {
+		if berr := s.crm.BindGuardianOpenID(ctx, guardian.ID, openid); berr != nil {
+			slog.Warn("采集家长 openid 失败", "guardian_id", guardian.ID, "error", berr)
 		}
 	}
 	tok, exp, err := s.tokens.Issue(guardian.ID, "guardian", guardian.Phone, biz.NewID())

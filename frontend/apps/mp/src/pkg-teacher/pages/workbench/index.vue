@@ -15,6 +15,9 @@ interface Summary {
 type ActionKey =
   | "tasks"
   | "reviews"
+  | "slots"
+  | "bookings"
+  | "lessons"
   | "students"
   | "guardians"
   | "import"
@@ -60,6 +63,21 @@ const actions = computed<ActionItem[]>(() => {
       badge: summary.value?.submissions_pending,
     },
     { key: "reviews", title: "待批阅", desc: "按提交时间处理", icon: "批" },
+    {
+      key: "slots",
+      title: "可预约时段",
+      desc: "开放时间、按周批量",
+      icon: "时",
+      badge: summary.value?.bookings_pending,
+    },
+    { key: "bookings", title: "预约审核", desc: "通过、驳回、消课", icon: "约" },
+    {
+      key: "lessons",
+      title: "课时台账",
+      desc: "余额、充值、流水",
+      icon: "课",
+      badge: summary.value?.low_balance_students,
+    },
     { key: "students", title: "学员档案", desc: "分组、跟进、回访", icon: "学" },
     { key: "guardians", title: "绑定审批", desc: "家长申请与解绑", icon: "家", ownerOnly: true },
     { key: "import", title: "导入学员", desc: "Excel 批量导入", icon: "导", ownerOnly: true },
@@ -109,6 +127,9 @@ function go(key: ActionKey): void {
   const routes: Record<ActionKey, string> = {
     tasks: "/pkg-teacher/pages/tasks/index",
     reviews: "/pkg-teacher/pages/reviews/index",
+    slots: "/pkg-teacher/pages/slots/index",
+    bookings: "/pkg-teacher/pages/bookings/index",
+    lessons: "/pkg-teacher/pages/lessons/index",
     students: "/pkg-teacher/pages/students/index",
     guardians: "/pkg-teacher/pages/guardians/index",
     import: "/pkg-teacher/pages/import/index",

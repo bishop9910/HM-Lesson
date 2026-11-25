@@ -20,11 +20,14 @@ type Server struct {
 	crm       *biz.CRMUsecase
 	importUC  *biz.ImportUsecase
 	tasks     *biz.TaskUsecase
+	subs      *biz.SubscriptionUsecase
+	bookings  *biz.BookingUsecase
+	lessons   *biz.LessonUsecase
 	tokens    *token.Issuer
 }
 
-func New(uc *biz.AuthUsecase, dashboard *biz.DashboardUsecase, bind *biz.BindUsecase, crm *biz.CRMUsecase, importUC *biz.ImportUsecase, tasks *biz.TaskUsecase, tokens *token.Issuer) *Server {
-	return &Server{uc: uc, dashboard: dashboard, bind: bind, crm: crm, importUC: importUC, tasks: tasks, tokens: tokens}
+func New(uc *biz.AuthUsecase, dashboard *biz.DashboardUsecase, bind *biz.BindUsecase, crm *biz.CRMUsecase, importUC *biz.ImportUsecase, tasks *biz.TaskUsecase, subs *biz.SubscriptionUsecase, bookings *biz.BookingUsecase, lessons *biz.LessonUsecase, tokens *token.Issuer) *Server {
+	return &Server{uc: uc, dashboard: dashboard, bind: bind, crm: crm, importUC: importUC, tasks: tasks, subs: subs, bookings: bookings, lessons: lessons, tokens: tokens}
 }
 
 type loginRequest struct {
