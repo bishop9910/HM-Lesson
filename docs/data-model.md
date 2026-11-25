@@ -436,9 +436,11 @@ erDiagram
 
 ### 3.6 资料
 
+> **实现现状（2026-11-25，迁移 `000011_materials`）**：以下表按 MySQL 5.7 实际结构落地。`material_categories` 去掉了 `is_system`（内置六分类用 `code` 白名单 + `CHECK` 表达）；`material_visibility.group_code` 取值为 `class_active` / `one_on_one` / `intent` / `visitor`（与 `students.group_code` 同域）；`materials.file_ids` 为 JSON 数组（每项 `{name,fileID,size}`，最多 9 个），`description` 改 `varchar(1000)`；`material_download_logs` 增加 `student_id`（可空）并区分 `file_id`，`ip` 用 `varchar(64)`。家长端可见性由 `portalMaterialSelect` 三重过滤（`status='published'` + `material_visibility.visible=1` + 学员分组匹配 + 家长/学员均 active），不可见与不存在统一返回 404，不泄露存在性。
+
 #### `material_categories`
 
-`id`、`code varchar(32) UNIQUE`、`name varchar(64)`、`sort int`、`is_system boolean`、`created_at`。
+`id`、`code varchar(32) UNIQUE`、`name varchar(64)`、`sort int`、`created_at`。
 
 #### `material_visibility`
 

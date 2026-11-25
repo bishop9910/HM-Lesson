@@ -23,11 +23,13 @@ type Server struct {
 	subs      *biz.SubscriptionUsecase
 	bookings  *biz.BookingUsecase
 	lessons   *biz.LessonUsecase
+	materials *biz.MaterialUsecase
+	ops       *biz.OpsUsecase
 	tokens    *token.Issuer
 }
 
-func New(uc *biz.AuthUsecase, dashboard *biz.DashboardUsecase, bind *biz.BindUsecase, crm *biz.CRMUsecase, importUC *biz.ImportUsecase, tasks *biz.TaskUsecase, subs *biz.SubscriptionUsecase, bookings *biz.BookingUsecase, lessons *biz.LessonUsecase, tokens *token.Issuer) *Server {
-	return &Server{uc: uc, dashboard: dashboard, bind: bind, crm: crm, importUC: importUC, tasks: tasks, subs: subs, bookings: bookings, lessons: lessons, tokens: tokens}
+func New(uc *biz.AuthUsecase, dashboard *biz.DashboardUsecase, bind *biz.BindUsecase, crm *biz.CRMUsecase, importUC *biz.ImportUsecase, tasks *biz.TaskUsecase, subs *biz.SubscriptionUsecase, bookings *biz.BookingUsecase, lessons *biz.LessonUsecase, materials *biz.MaterialUsecase, ops *biz.OpsUsecase, tokens *token.Issuer) *Server {
+	return &Server{uc: uc, dashboard: dashboard, bind: bind, crm: crm, importUC: importUC, tasks: tasks, subs: subs, bookings: bookings, lessons: lessons, materials: materials, ops: ops, tokens: tokens}
 }
 
 type loginRequest struct {
@@ -41,10 +43,11 @@ type staffDTO struct {
 	Phone  string `json:"phone"`
 	Role   string `json:"role"`
 	Status string `json:"status"`
+	Hidden bool   `json:"hidden"`
 }
 
 func toDTO(s *biz.Staff) staffDTO {
-	return staffDTO{ID: s.ID, Name: s.Name, Phone: s.Phone, Role: s.Role, Status: s.Status}
+	return staffDTO{ID: s.ID, Name: s.Name, Phone: s.Phone, Role: s.Role, Status: s.Status, Hidden: s.Hidden}
 }
 
 func (s *Server) Login(ctx khttp.Context) error {
@@ -213,6 +216,8 @@ func mapBizError(ctx khttp.Context, err error) error {
 		return fail(ctx, http.StatusBadRequest, "WEAK_PASSWORD", "密码至少 8 位")
 	case errors.Is(err, biz.ErrSystemLocked):
 		return fail(ctx, http.StatusForbidden, "SYSTEM_ACCOUNT_LOCKED", "系统账号不可在成员管理里修改")
+	case errors.Is(err, biz.ErrOwnerProtected):
+		return fail(ctx, http.StatusForbidden, "OWNER_PROTECTED", "只有内部系统账号可以停用或降级负责人")
 	case errors.Is(err, biz.ErrReservedAccount):
 		return fail(ctx, http.StatusBadRequest, "RESERVED_ACCOUNT", "该用户名保留给系统账号")
 	default:

@@ -27,11 +27,10 @@ function ensureCloud(): CloudUploadApi {
   return cloud;
 }
 
-/** 上传图片到云存储，返回 fileID；H5/本地调试无云能力时抛错。 */
-export function uploadImage(filePath: string): Promise<string> {
+function uploadTo(folder: string, filePath: string, name?: string): Promise<string> {
   const api = ensureCloud();
-  const ext = filePath.split(".").pop()?.toLowerCase() || "jpg";
-  const cloudPath = `hm/submissions/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const ext = (name || filePath).split(".").pop()?.toLowerCase() || "bin";
+  const cloudPath = `hm/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
   return new Promise<string>((resolve, reject) => {
     api.uploadFile({
       cloudPath,
@@ -40,4 +39,14 @@ export function uploadImage(filePath: string): Promise<string> {
       fail: (err) => reject(new Error(err.errMsg || "上传失败")),
     });
   });
+}
+
+/** 上传图片到云存储，返回 fileID；H5/本地调试无云能力时抛错。 */
+export function uploadImage(filePath: string): Promise<string> {
+  return uploadTo("submissions", filePath);
+}
+
+/** 上传讲义/资料文件到云存储（对象键由前端生成，后端只存 fileID）。 */
+export function uploadMaterial(filePath: string, name?: string): Promise<string> {
+  return uploadTo("materials", filePath, name);
 }

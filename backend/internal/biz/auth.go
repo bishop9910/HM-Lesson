@@ -16,6 +16,8 @@ var (
 	ErrStaffNotFound      = errors.New("老师不存在")
 	ErrReservedAccount    = errors.New("该用户名保留给系统账号")
 	ErrSystemLocked       = errors.New("系统账号不可停用、降级或改名")
+	// ErrOwnerProtected 负责人账号只能由内部系统账号停用或降级。
+	ErrOwnerProtected = errors.New("只有内部系统账号可以停用或降级负责人")
 )
 
 const (
@@ -220,6 +222,15 @@ func (uc *AuthUsecase) UpdateStaff(ctx context.Context, actor *Staff, id string,
 	// 系统账号是内部调试入口，成员管理一律不能改（自助改密走 ChangePassword）。
 	if target.Hidden {
 		return nil, ErrSystemLocked
+	}
+	// 负责人之间不能互相停用/降级，只有内部系统账号（hidden）可以做这个操作。
+	if target.Role == RoleOwner && !actor.Hidden {
+		if in.Status != nil && *in.Status != StatusActive {
+			return nil, ErrOwnerProtected
+		}
+		if in.Role != nil && *in.Role != RoleOwner {
+			return nil, ErrOwnerProtected
+		}
 	}
 	// 防止唯一负责人把自己降级/停用后无人能管理系统。
 	if target.ID == actor.ID {

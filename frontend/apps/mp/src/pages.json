@@ -48,6 +48,10 @@
     {
       "path": "pages/portal/password",
       "style": { "navigationBarTitleText": "修改密码" }
+    },
+    {
+      "path": "pages/portal/materials",
+      "style": { "navigationBarTitleText": "学习资料" }
     }
   ],
   "subPackages": [
@@ -109,6 +113,14 @@
         {
           "path": "pages/password/index",
           "style": { "navigationBarTitleText": "修改密码" }
+        },
+        {
+          "path": "pages/materials/index",
+          "style": { "navigationBarTitleText": "资料库" }
+        },
+        {
+          "path": "pages/system/index",
+          "style": { "navigationBarTitleText": "系统维护" }
         }
       ]
     }

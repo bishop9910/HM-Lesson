@@ -254,6 +254,13 @@ backend/
 - 老师可覆盖单个资料的分组可见性（在分类矩阵基础上），但不得越过“保密”语义（二期）。
 - 聊天窗口不直接发原文件（蓝本要求），统一走小程序资料页。
 
+> **实现现状（2026-11-25，迁移 `000011_materials` 已落地）**：
+> - 接口：`GET/POST /api/v1/material-categories`、`PATCH /api/v1/material-categories/{id}`、`PUT /api/v1/material-categories/{id}/visibility`、`GET/POST /api/v1/materials`、`GET/PATCH/DELETE /api/v1/materials/{id}`、`POST /api/v1/materials/{id}/publish|archive`、`GET /api/v1/material-downloads`、`GET /api/v1/portal/materials`、`POST /api/v1/portal/materials/{id}/download`。
+> - 分类初始矩阵在启动时由 `EnsureDefaults` 幂等补齐（`INSERT IGNORE`），owner 改过的不覆盖；六个 `code` 固定：`class_handout`、`one_on_one`、`exam`、`trial`、`enrollment`、`recording`。
+> - 权限：分类与可见性矩阵的写操作仅 owner；资料 CRUD 允许助教；删除仅 owner。家长端只返回 `published` 且矩阵允许其学员分组的资料，不可见与不存在统一 404。
+> - 下载：家长调用 `POST /api/v1/portal/materials/{id}/download` 时先校验可见性并逐文件写 `material_download_logs`，返回 fileID，小程序再用 `wx.cloud.downloadFile` + `wx.openDocument` 打开（临时链接由云存储侧提供）。
+> - 未做：单份资料的额外分组覆盖（二期）、聊天窗口发送原文件（范围外）。
+
 ### 3.7 M6 通知与回执
 
 - 通知：标题、正文（富文本/纯文本）、附件、发送人群（分组/标签/学员）、是否需要回执、发送时间、状态（`draft` / `sending` / `sent`）。

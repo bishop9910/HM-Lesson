@@ -214,6 +214,10 @@ function goBooking(): void {
   uni.navigateTo({ url: "/pages/portal/booking" });
 }
 
+function goMaterials(): void {
+  uni.navigateTo({ url: "/pages/portal/materials" });
+}
+
 function goPassword(): void {
   uni.navigateTo({ url: "/pages/portal/password" });
 }
@@ -283,6 +287,7 @@ function goPassword(): void {
       <view class="quick">
         <button class="ghost" @click="goTasks">我的任务</button>
         <button class="ghost" @click="goBooking">预约上课</button>
+        <button class="ghost" @click="goMaterials">学习资料</button>
         <button class="ghost" @click="goArchive">作业档案</button>
       </view>
 

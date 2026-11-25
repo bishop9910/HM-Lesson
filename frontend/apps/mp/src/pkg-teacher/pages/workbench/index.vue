@@ -22,7 +22,9 @@ type ActionKey =
   | "guardians"
   | "import"
   | "staff"
-  | "password";
+  | "materials"
+  | "password"
+  | "system";
 
 interface ActionItem {
   key: ActionKey;
@@ -31,6 +33,7 @@ interface ActionItem {
   icon: string;
   primary?: boolean;
   ownerOnly?: boolean;
+  systemOnly?: boolean;
   badge?: number;
 }
 
@@ -80,12 +83,16 @@ const actions = computed<ActionItem[]>(() => {
       badge: summary.value?.low_balance_students,
     },
     { key: "students", title: "学员档案", desc: "分组、跟进、回访", icon: "学" },
+    { key: "materials", title: "资料库", desc: "讲义、真题、分组可见", icon: "料" },
     { key: "guardians", title: "家长账号", desc: "审批、设密码、清理", icon: "家", ownerOnly: true },
     { key: "import", title: "导入学员", desc: "Excel 批量导入", icon: "导", ownerOnly: true },
     { key: "staff", title: "成员管理", desc: "老师账号与权限", icon: "员", ownerOnly: true },
     { key: "password", title: "修改密码", desc: "登录密码自助修改", icon: "密" },
+    { key: "system", title: "系统维护", desc: "操作记录、权限、控制台", icon: "系", systemOnly: true },
   ];
-  return list.filter((item) => !item.ownerOnly || session.isOwner);
+  return list.filter(
+    (item) => (!item.ownerOnly || session.isOwner) && (!item.systemOnly || session.isSystem),
+  );
 });
 
 async function load(): Promise<void> {
@@ -136,7 +143,9 @@ function go(key: ActionKey): void {
     guardians: "/pkg-teacher/pages/guardians/index",
     import: "/pkg-teacher/pages/import/index",
     staff: "/pkg-teacher/pages/staff/index",
+    materials: "/pkg-teacher/pages/materials/index",
     password: "/pkg-teacher/pages/password/index",
+    system: "/pkg-teacher/pages/system/index",
   };
   uni.navigateTo({ url: routes[key] });
 }

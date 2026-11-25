@@ -72,6 +72,7 @@ func main() {
 	router.GET("/api/v1/students/{id}", authSrv.GetStudent)
 	router.PATCH("/api/v1/students/{id}", authSrv.UpdateStudent)
 	router.DELETE("/api/v1/students/{id}", authSrv.DeleteStudent)
+	router.POST("/api/v1/students/batch-delete", authSrv.BatchDeleteStudents)
 	router.GET("/api/v1/students/{id}/follow-ups", authSrv.ListFollowUps)
 	router.POST("/api/v1/students/{id}/follow-ups", authSrv.CreateFollowUp)
 	router.POST("/api/v1/students/{id}/binding-codes", authSrv.CreateBindingCode)
@@ -81,6 +82,7 @@ func main() {
 	router.POST("/api/v1/guardians/{id}/reject", authSrv.RejectGuardian)
 	router.POST("/api/v1/guardians/{id}/password", authSrv.ResetGuardianPassword)
 	router.DELETE("/api/v1/guardians/{id}", authSrv.DeleteGuardian)
+	router.POST("/api/v1/guardians/batch-delete", authSrv.BatchDeleteGuardians)
 	router.POST("/api/v1/auth/password", authSrv.ChangePassword)
 	router.POST("/api/v1/auth/guardian/password", authSrv.ChangeGuardianPassword)
 	router.POST("/api/v1/auth/guardian/login", authSrv.GuardianLogin)
@@ -146,6 +148,29 @@ func main() {
 	router.GET("/api/v1/lesson-ledger", authSrv.ListLessonLedger)
 	router.GET("/api/v1/portal/lesson-account", authSrv.PortalLessonAccount)
 
+	// M5 资料库：分类矩阵 + 资料 + 下载记录（教师端）。
+	router.GET("/api/v1/material-categories", authSrv.ListMaterialCategories)
+	router.POST("/api/v1/material-categories", authSrv.CreateMaterialCategory)
+	router.PATCH("/api/v1/material-categories/{id}", authSrv.UpdateMaterialCategory)
+	router.PUT("/api/v1/material-categories/{id}/visibility", authSrv.SetMaterialCategoryVisibility)
+	router.GET("/api/v1/materials", authSrv.ListMaterials)
+	router.POST("/api/v1/materials", authSrv.CreateMaterial)
+	router.GET("/api/v1/materials/{id}", authSrv.GetMaterial)
+	router.PATCH("/api/v1/materials/{id}", authSrv.UpdateMaterial)
+	router.POST("/api/v1/materials/{id}/publish", authSrv.PublishMaterial)
+	router.POST("/api/v1/materials/{id}/archive", authSrv.ArchiveMaterial)
+	router.DELETE("/api/v1/materials/{id}", authSrv.DeleteMaterial)
+	router.GET("/api/v1/material-downloads", authSrv.ListMaterialDownloads)
+
+	// M5 家长端资料。
+	router.GET("/api/v1/portal/materials", authSrv.PortalMaterials)
+	router.POST("/api/v1/portal/materials/{id}/download", authSrv.PortalDownloadMaterial)
+
+	// 内部系统账号（system）专用的运维接口：操作记录、权限视图、只读控制台。
+	router.GET("/api/v1/system/audit", authSrv.SystemAudit)
+	router.GET("/api/v1/system/permissions", authSrv.SystemPermissions)
+	router.POST("/api/v1/system/query", authSrv.SystemQuery)
+
 	app := kratos.New(
 		kratos.Name("hm-api"),
 		kratos.Version(version.Version),
@@ -168,7 +193,7 @@ func main() {
 func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.SubscriptionUsecase, *gorm.DB) {
 	if cfg.DBDSN == "" {
 		logger.Warn("HM_DB_DSN 未配置，仅健康检查可用；登录/成员接口返回 503")
-		return service.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil
+		return service.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil
 	}
 	db, err := data.Open(cfg.DBDSN)
 	if err != nil {
@@ -198,12 +223,18 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.
 		logger.Warn("库中没有老师账号，且未配置 HM_BOOTSTRAP_PHONE/HM_BOOTSTRAP_PASSWORD；请配置后重启")
 	}
 	// 内部系统账号（用户名 system）：只在创建时或密码为空时从环境变量取初始密码。
-	if _, created, serr := uc.EnsureSystem(context.Background(), cfg.SystemPassword); serr != nil {
+	system, sysCreated, serr := uc.EnsureSystem(context.Background(), cfg.SystemPassword)
+	switch {
+	case serr != nil:
 		logger.Warn("系统账号维护失败，不影响业务", "error", serr)
-	} else if created {
-		logger.Info("已创建内部系统账号", "phone", biz.SystemPhone)
-	} else if cfg.SystemPassword == "" {
-		logger.Warn("未配置 HM_SYSTEM_PASSWORD，系统账号无法用环境变量初始化密码；若已设过密码则可忽略")
+	case sysCreated:
+		logger.Info("已创建内部系统账号", "phone", biz.SystemPhone, "hidden", true)
+	case system == nil:
+		logger.Warn("未配置 HM_SYSTEM_PASSWORD，且系统账号尚未创建；配置后重启即可创建")
+	case system.PasswordHash == "":
+		logger.Warn("内部系统账号还没有密码，请配置 HM_SYSTEM_PASSWORD 后重启", "phone", biz.SystemPhone)
+	default:
+		logger.Info("内部系统账号已存在", "phone", biz.SystemPhone, "hidden", true)
 	}
 	dashboard := biz.NewDashboardUsecase(data.NewDashboardRepo(db))
 	bind := biz.NewBindUsecase(data.NewGuardianRepo(db))
@@ -213,7 +244,15 @@ func buildServices(cfg conf.Config, logger *slog.Logger) (*service.Server, *biz.
 	subs := buildSubscriptions(cfg, db, logger)
 	bookings := biz.NewBookingUsecase(data.NewBookingRepo(db), cfg.LessonHoursPerSession)
 	lessons := biz.NewLessonUsecase(data.NewLessonRepo(db))
-	return service.New(uc, dashboard, bind, crm, importUC, tasks, subs, bookings, lessons, issuer), subs, db
+	materials := biz.NewMaterialUsecase(data.NewMaterialRepo(db))
+	// 资料分类与分组矩阵按蓝本表 7 幂等补齐（owner 改过的不覆盖）。
+	if created, merr := materials.EnsureDefaults(context.Background()); merr != nil {
+		logger.Warn("资料分类初始化失败，不影响其它功能", "error", merr)
+	} else if created > 0 {
+		logger.Info("已初始化资料分类", "created", created)
+	}
+	return service.New(uc, dashboard, bind, crm, importUC, tasks, subs, bookings, lessons, materials,
+		biz.NewOpsUsecase(data.NewOpsRepo(db)), issuer), subs, db
 }
 
 // buildSubscriptions 组装一次性订阅消息用例。

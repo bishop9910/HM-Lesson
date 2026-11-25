@@ -280,6 +280,10 @@ func (s *Server) DeleteStudent(ctx khttp.Context) error {
 		}
 		return mapCRMBizError(ctx, err)
 	}
+	s.ops.Record(ctx, actor, "student.delete", "student", id, fmt.Sprintf(
+		`{"force":%t,"task_assignments":%d,"bookings":%d,"lesson_ledger":%d,"guardians":%d}`,
+		force, stats.TaskAssignments, stats.Bookings, stats.LessonLedger, stats.Guardians,
+	))
 	return ctx.JSON(http.StatusOK, map[string]any{
 		"ok": true,
 		"deleted": map[string]any{
@@ -409,6 +413,7 @@ func (s *Server) DeleteGuardian(ctx khttp.Context) error {
 	if err := s.crm.DeleteGuardian(ctx, actor, ctx.Vars().Get("id")); err != nil {
 		return mapCRMBizError(ctx, err)
 	}
+	s.ops.Record(ctx, actor, "guardian.delete", "guardian", ctx.Vars().Get("id"), `{"ok":true}`)
 	return ctx.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -130,13 +130,17 @@
 - [x] 家长门户补：我的预约（提交/撤回）、课时余额与流水（`pages/portal/booking`、`/api/v1/portal/lesson-account`）
 - [ ] 预约通知：AF-07/08/09 需要 `notifications` 支持教师维度（`guardian_id` 目前 NOT NULL），随 M6 一起改
 
-### M5 资料库
+### M5 资料库（2026-11-25 已完成待真机验证）
 
-- [ ] 目录：高一/高二/高三一轮/高三二轮/月考真题/试听招生
-- [ ] 分类 × 分组权限矩阵（服务端判定）
-- [ ] 上传到 COS → `files` → 资料记录
-- [ ] 下载：短期临时链接或服务端流式；记 `download_logs`
-- [ ] 家长端「我的资料」
+> 迁移 `000011_materials`（`material_categories` / `material_visibility` / `materials` / `material_download_logs`）。注意 up 里先 `DROP TABLE IF EXISTS materials`，因为 `000002` 留过旧形态的单文件表。
+
+- [x] 目录：六分类内置（班课讲义/一对一/月考真题/试听体验/招生课表/课堂录播），启动 `EnsureDefaults` 幂等补齐
+- [x] 分类 × 分组权限矩阵（服务端判定，owner 可改；家长端只返回 `published` 且矩阵允许其分组的资料）
+- [x] 上传到 COS（`wx.cloud.uploadFile`）→ `file_ids` JSON 数组 → 资料记录；最多 9 个附件
+- [x] 下载：家长先 `POST /api/v1/portal/materials/{id}/download` 校验并写 `material_download_logs`，再用 `wx.cloud.downloadFile` + `wx.openDocument` 打开
+- [x] 家长端「我的资料」（按分类分组展示，三态齐全）
+- [ ] 验证：真机上传一份讲义、家长端下载并打开；确认无权分组的家长看不到
+- [ ] 二期：单份资料在矩阵之上的额外分组覆盖
 
 ### M6 通知回执 + 导出
 

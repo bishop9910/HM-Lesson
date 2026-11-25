@@ -203,6 +203,76 @@ function remove(item: GuardianAccount): void {
 function switchTab(next: "pending" | "accounts"): void {
   tab.value = next;
 }
+
+// 批量清理：多选 → 两次确认 → 逐条删除（有在读学员的那条会被后端挡下）。
+const batchMode = ref(false);
+const picked = ref<string[]>([]);
+const batchBusy = ref(false);
+
+function enterBatch(): void {
+  batchMode.value = true;
+  picked.value = [];
+}
+
+function cancelBatch(): void {
+  batchMode.value = false;
+  picked.value = [];
+  batchBusy.value = false;
+}
+
+function togglePick(id: string): void {
+  const i = picked.value.indexOf(id);
+  if (i >= 0) picked.value.splice(i, 1);
+  else picked.value.push(id);
+}
+
+interface BatchItem {
+  id: string;
+  ok: boolean;
+  reason?: string;
+}
+
+async function batchRemove(): Promise<void> {
+  if (!picked.value.length) return;
+  const count = picked.value.length;
+  const first = await uni.showModal({
+    title: "批量删除家长账号",
+    content: `将删除选中的 ${count} 个家长账号，其绑定关系与历史通知一并清理。此操作不可撤销。`,
+    confirmText: "继续",
+    confirmColor: "#b91c1c",
+  });
+  if (!first.confirm) return;
+  const second = await uni.showModal({
+    title: "再确认一次",
+    content: `确定删除这 ${count} 个家长账号？仍绑定在读学员的账号会被跳过。`,
+    confirmText: "删除",
+    confirmColor: "#b91c1c",
+  });
+  if (!second.confirm) return;
+  batchBusy.value = true;
+  try {
+    const res = await request<{ items: BatchItem[]; deleted: number; blocked: number }>(
+      "/api/v1/guardians/batch-delete",
+      "POST",
+      { ids: [...picked.value] },
+    );
+    if (res.blocked > 0) {
+      uni.showModal({
+        title: `已删除 ${res.deleted} 个`,
+        content: `${res.blocked} 个账号仍绑定在读学员，未删除。可先把学员结课归档后再清理。`,
+        showCancel: false,
+      });
+    } else {
+      uni.showToast({ title: `已删除 ${res.deleted} 个`, icon: "success" });
+    }
+    cancelBatch();
+    await load();
+  } catch (err) {
+    uni.showToast({ title: err instanceof ApiError ? err.message : "批量删除失败", icon: "none" });
+  } finally {
+    batchBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -263,10 +333,23 @@ function switchTab(next: "pending" | "accounts"): void {
         </view>
       </view>
       <text v-if="cleanupCount" class="cleanup">有 {{ cleanupCount }} 个账号没有在读学员，可清理。</text>
+      <view class="batch-entry">
+        <button v-if="!batchMode" class="ghost" @click="enterBatch">批量清理</button>
+        <text v-else class="batch-tip">已选 {{ picked.length }} 个</text>
+      </view>
       <view v-if="loading" class="hint">正在加载…</view>
       <view v-else-if="!filteredAccounts.length" class="hint">没有符合条件的家长账号。</view>
-      <view v-for="item in filteredAccounts" :key="item.id" class="card">
+      <view
+        v-for="item in filteredAccounts"
+        :key="item.id"
+        class="card"
+        :class="{ picked: picked.includes(item.id) }"
+        @click="batchMode ? togglePick(item.id) : undefined"
+      >
         <view class="card-top">
+          <text v-if="batchMode" class="check" :class="{ on: picked.includes(item.id) }">
+            {{ picked.includes(item.id) ? "✓" : "" }}
+          </text>
           <text class="phone">{{ item.phone }}</text>
           <text class="badge" :class="item.status">{{ statusLabels[item.status] ?? item.status }}</text>
         </view>
@@ -277,10 +360,22 @@ function switchTab(next: "pending" | "accounts"): void {
           {{ item.has_password ? "已设密码" : "未设密码" }} ·
           {{ item.last_login_at ? `上次登录 ${item.last_login_at.slice(5, 16).replace("T", " ")}` : "从未登录" }}
         </text>
-        <view class="actions">
+        <view v-if="!batchMode" class="actions">
           <button class="ghost" @click="resetPassword(item)">重置密码</button>
           <button class="danger" @click="remove(item)">删除账号</button>
         </view>
+      </view>
+
+      <view v-if="batchMode" class="batchbar">
+        <button class="batch-cancel" @click="cancelBatch">取消</button>
+        <button
+          class="batch-del"
+          :loading="batchBusy"
+          :disabled="!picked.length || batchBusy"
+          @click="batchRemove"
+        >
+          删除选中
+        </button>
       </view>
     </template>
   </view>
@@ -368,6 +463,68 @@ function switchTab(next: "pending" | "accounts"): void {
   border-radius: $hm-radius;
   background: $hm-surface;
   border: 1rpx solid $hm-border;
+}
+
+.batch-entry {
+  margin-top: 12rpx;
+}
+
+.batch-tip {
+  font-size: 24rpx;
+  color: $hm-primary-strong;
+}
+
+.card.picked {
+  border-color: $hm-primary;
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.check {
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 12rpx;
+  line-height: 36rpx;
+  text-align: center;
+  border-radius: 8rpx;
+  border: 1rpx solid $hm-border;
+  font-size: 22rpx;
+  color: #fff;
+}
+
+.check.on {
+  background: $hm-primary;
+  border-color: $hm-primary;
+}
+
+.batchbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  margin-top: 24rpx;
+  padding: 16rpx 0;
+  gap: 16rpx;
+  background: $hm-bg;
+}
+
+.batch-cancel,
+.batch-del {
+  flex: 1;
+  height: 76rpx;
+  line-height: 76rpx;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+}
+
+.batch-cancel {
+  background: $hm-bg;
+  color: $hm-ink;
+  border: 1rpx solid $hm-border;
+}
+
+.batch-del {
+  background: #fff;
+  color: #b91c1c;
+  border: 1rpx solid rgba(185, 28, 28, 0.4);
 }
 
 .card-top {

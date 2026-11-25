@@ -181,6 +181,80 @@ async function batchArchive(): Promise<void> {
     batchBusy.value = false;
   }
 }
+
+interface BatchItem {
+  id: string;
+  ok: boolean;
+  reason?: string;
+}
+
+interface BatchResult {
+  items: BatchItem[];
+  deleted: number;
+  blocked: number;
+}
+
+async function callBatchDelete(force: boolean): Promise<BatchResult> {
+  return request<BatchResult>("/api/v1/students/batch-delete", "POST", {
+    ids: [...selected.value],
+    force,
+  });
+}
+
+// 批量删除学员：两次确认；若有课时流水，第三次确认后带 force 重试。
+async function batchDeleteStudents(): Promise<void> {
+  if (!selected.value.length) return;
+  const count = selected.value.length;
+  const first = await uni.showModal({
+    title: "批量删除学员",
+    content: `将删除选中的 ${count} 位学员档案，及其作业、预约、与家长的绑定关系。此操作不可撤销。`,
+    confirmText: "继续",
+    confirmColor: "#b91c1c",
+  });
+  if (!first.confirm) return;
+  const second = await uni.showModal({
+    title: "再确认一次",
+    content: `确定删除这 ${count} 位学员？家长会变为未绑定状态，账号可随后单独清理。`,
+    confirmText: "删除",
+    confirmColor: "#b91c1c",
+  });
+  if (!second.confirm) return;
+  batchBusy.value = true;
+  try {
+    let res = await callBatchDelete(false);
+    if (res.blocked > 0) {
+      const ledgerBlocked = res.items.filter(
+        (item) => !item.ok && item.reason === "STUDENT_HAS_LESSON_LEDGER",
+      ).length;
+      if (ledgerBlocked > 0) {
+        const third = await uni.showModal({
+          title: "有学员存在课时流水",
+          content: `${ledgerBlocked} 位学员有课时流水，继续删除会连同流水一起清除，账目不可恢复。`,
+          confirmText: "连同流水删除",
+          confirmColor: "#b91c1c",
+        });
+        if (third.confirm) {
+          res = await callBatchDelete(true);
+        }
+      }
+    }
+    if (res.deleted > 0) {
+      uni.showToast({ title: `已删除 ${res.deleted} 位`, icon: "success" });
+    } else {
+      const reason = res.items.find((item) => !item.ok)?.reason;
+      uni.showToast({
+        title: reason === "STUDENT_HAS_LESSON_LEDGER" ? "有学员存在课时流水，未删除" : "未删除任何学员",
+        icon: "none",
+      });
+    }
+    cancelSelect();
+    await load();
+  } catch (err) {
+    uni.showToast({ title: err instanceof ApiError ? err.message : "批量删除失败", icon: "none" });
+  } finally {
+    batchBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -245,6 +319,15 @@ async function batchArchive(): Promise<void> {
       <button class="batch-cancel" @click="cancelSelect">取消</button>
       <button class="batch-ok" :loading="batchBusy" :disabled="!selected.length || batchBusy" @click="batchArchive">
         结课归档
+      </button>
+      <button
+        v-if="session.isOwner"
+        class="batch-del"
+        :loading="batchBusy"
+        :disabled="!selected.length || batchBusy"
+        @click="batchDeleteStudents"
+      >
+        删除
       </button>
     </view>
 
@@ -429,7 +512,8 @@ async function batchArchive(): Promise<void> {
 }
 
 .batch-cancel,
-.batch-ok {
+.batch-ok,
+.batch-del {
   height: 72rpx;
   padding: 0 28rpx;
   line-height: 72rpx;
@@ -445,6 +529,12 @@ async function batchArchive(): Promise<void> {
 .batch-ok {
   background: $hm-primary;
   color: #fff;
+}
+
+.batch-del {
+  background: #fff;
+  color: #b91c1c;
+  border: 1rpx solid rgba(185, 28, 28, 0.4);
 }
 
 .card-top {

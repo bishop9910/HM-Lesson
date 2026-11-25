@@ -6,7 +6,14 @@ import { useSessionStore } from "@/stores/session";
 interface LoginResponse {
   token: string;
   expires_at: string;
-  staff: { id: string; name: string; phone: string; role: "owner" | "assistant"; status: string };
+  staff: {
+    id: string;
+    name: string;
+    phone: string;
+    role: "owner" | "assistant";
+    status: string;
+    hidden?: boolean;
+  };
 }
 
 const session = useSessionStore();
@@ -28,7 +35,7 @@ async function submit(): Promise<void> {
       phone: phone.value.trim(),
       password: password.value,
     });
-    session.setSession(res.token, res.staff.role, res.staff.id, res.staff.name);
+    session.setSession(res.token, res.staff.role, res.staff.id, res.staff.name, res.staff.hidden === true);
     uni.reLaunch({ url: "/pkg-teacher/pages/workbench/index" });
   } catch (err) {
     error.value = err instanceof ApiError ? err.message : "登录失败，请稍后重试";

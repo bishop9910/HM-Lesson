@@ -4,6 +4,8 @@ package data
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -18,7 +20,7 @@ func Open(dsn string) (*gorm.DB, error) {
 		return nil, errors.New("HM_DB_DSN 未配置")
 	}
 	db, err := gorm.Open(mysql.Open(withUTCSession(dsn)), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: newSQLLogger(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("连接 MySQL: %w", err)
@@ -31,6 +33,24 @@ func Open(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 	return db, nil
+}
+
+// newSQLLogger 只记录慢查询与真正的 SQL 错误。
+//
+// IgnoreRecordNotFoundError 很关键：本项目大量使用「先查、查不到再走创建分支」的写法
+// （例如启动时探测系统账号 system、按手机号找家长、按绑定码找学员）。GORM 默认会把
+// ErrRecordNotFound 当异常打印，日志里就会出现 `[rows:0] SELECT ...` 加一行
+// `staff.go:76 record not found`，看起来像故障，其实只是「这个账号还不存在」。
+func newSQLLogger() logger.Interface {
+	return logger.New(
+		log.New(os.Stdout, "", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
 }
 
 // withUTCSession 强制每条连接的会话时区为 UTC。

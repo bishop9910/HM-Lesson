@@ -227,13 +227,13 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
     改环境变量生成的是“配置版本”，复用旧镜像。代码改动必须让云托管从新 commit 构建；构建后确认镜像 tag 变化。
 
 11. **迁移**
-    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 10 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
+    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 11 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
 
 12. **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移（2026-11-25 线上事故）**
-    `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。
+    `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。`000011_materials` 里同样先 `DROP TABLE IF EXISTS materials`（000002 留了旧形态单文件表），否则资料库会整体被跳过。
 
 13. **MySQL 5.7**
-    没有部分唯一索引、没有 RETURNING/ON CONFLICT/JSONB；`CHECK` 会被解析但忽略，业务层必须校验。字符集 `utf8mb4_unicode_ci`。
+    没有部分唯一索引、没有 RETURNING/ON CONFLICT/JSONB；`CHECK` 会被解析但忽略，业务层必须校验。字符集 `utf8mb4_unicode_ci`。JSON 列传参必须用 `string(payload)`，传 `[]byte` 会命中 `3144`（binary 字符集不被接受）。
 
 14. **MySQL 会话时区必须钉成 UTC（2026-11-25 线上发现）**
     云托管 MySQL 的 `time_zone` 是 `+08:00`，`NOW(3)` / `CURRENT_TIMESTAMP` 写进 `datetime` 的是**本地墙上时间**，而 Go 侧写入的是 UTC → 同一列里差 8 小时（实测 `bookings.reviewed_at` 比 `lesson_ledger.occurred_at` 快 8 小时）。`data.Open` 现在会通过 `withUTCSession` 给 DSN 追加 `time_zone='+00:00'`（go-sql-driver 在握手时执行 `SET time_zone`），已显式配过就不覆盖。**自己拼 `HM_DB_DSN` 时要手动带上这个参数**，否则时间又会混。
@@ -352,6 +352,36 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 - [ ] 预约通知 AF-07/08/09：`notifications.guardian_id` 目前 NOT NULL，无法给老师发通知，需迁移支持 staff 维度；
 - [ ] 班课（班级名单、上课记录、不扣课时）；
 - [ ] 课前 24h 提醒（AF-10，需定时任务 + 订阅消息模板）。
+
+---
+
+## 7.6 已完成：M5 学习资料库（2026-11-25）
+
+**迁移**：`backend/migrations/000011_materials.up.sql` / `.down.sql`（`material_categories`、`material_visibility`、`materials`、`material_download_logs`）。**注意 up 里先 `DROP TABLE IF EXISTS materials`**：`000002_teaching` 留过一张旧形态的单文件 `materials` 表，不先删就会被 `CREATE TABLE IF NOT EXISTS` 静默跳过（同 §5 第 12 条的坑）。`internal/data/migrate_test.go` 期望 11 个迁移。
+
+**代码接入点**
+
+| 文件 | 职责 |
+| --- | --- |
+| `backend/internal/biz/material.go` | 六分类蓝本矩阵 `DefaultCategories()`、资料输入校验（标题 ≤200、说明 ≤1000、年级白名单、文件 ≤9）、状态机 draft/published/archived、owner 才可删/改分类 |
+| `backend/internal/data/material.go` | `EnsureCategories`（`INSERT IGNORE` 幂等补齐）、分类矩阵读写、`portalMaterialSelect` 三重过滤、下载日志 |
+| `backend/internal/service/material.go` | 14 个 handler + 稳定 reason（`MATERIAL_NOT_FOUND`/`MATERIAL_CATEGORY_NOT_FOUND`/`MATERIAL_STATE`/`FORBIDDEN`） |
+| `backend/cmd/hm/main.go` | 14 条路由 + 启动时 `EnsureDefaults` |
+| `frontend/apps/mp/src/pkg-teacher/pages/materials/index.vue` | 教师：分类切换、上传（`chooseMessageFile` → `wx.cloud.uploadFile`）、发布/归档/删除 |
+| `frontend/apps/mp/src/pages/portal/materials.vue` | 家长：按分类分组看已发布资料，下载前先 `POST /api/v1/portal/materials/{id}/download` 记日志，再 `wx.cloud.downloadFile` + `wx.openDocument` |
+
+**语义（别改错）**
+
+- 家长端可见性只在服务端判定：`status='published'` **且** 该学员分组的 `material_visibility.visible=1` **且** 家长/学员都是 active；不可见与不存在统一返回 `MATERIAL_NOT_FOUND`（404），不泄露存在性。
+- 分类与分组矩阵的写操作只给 owner；资料 CRUD 助教可用（批阅、发资料是助教日常）；删除资料只给 owner。
+- 文件走 `file_ids` JSON 数组（`{name,fileID,size}`），入库时用 `string(payload)`（MySQL 5.7 JSON 列不接受 `[]byte`）。
+- 下载日志逐文件一条，记录 `guardian_id`、可解析出的 `student_id`、`ip`。
+
+**未做/待跟进**
+
+- [ ] 真机验证上传与下载打开（`wx.openDocument` 需要真机）；
+- [ ] 单份资料在分类矩阵之上的额外分组覆盖（二期）；
+- [ ] 资料与消息中心的联动（M6）。
 
 ---
 

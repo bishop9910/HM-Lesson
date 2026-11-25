@@ -23,6 +23,8 @@ var (
 	ErrPasswordNotSet      = errors.New("password not set")
 	ErrGuardianHasStudents = errors.New("guardian still bound to students")
 	ErrStudentHasLedger    = errors.New("student has lesson ledger")
+	// ErrInvalidBatch 批量操作的 id 列表为空或超过上限。
+	ErrInvalidBatch = errors.New("invalid batch ids")
 )
 
 var (
@@ -326,6 +328,102 @@ func (uc *CRMUsecase) DeleteStudent(ctx context.Context, actor *Staff, studentID
 		return stats, err
 	}
 	return stats, nil
+}
+
+// MaxBatchDelete 一次批量删除的条数上限（避免单请求超时）。
+const MaxBatchDelete = 50
+
+// BatchDeleteResult 批量删除的单条结果。
+type BatchDeleteResult struct {
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+	Reason string `json:"reason,omitempty"`
+	// Deleted 只在学员删除时返回，用于前端汇总提示。
+	Deleted *StudentDeleteStats `json:"deleted,omitempty"`
+}
+
+// DeleteStudents 批量删除学员：逐条执行，单条失败不影响其余（结果逐条返回）。
+func (uc *CRMUsecase) DeleteStudents(ctx context.Context, actor *Staff, ids []string, force bool) ([]BatchDeleteResult, error) {
+	if actor == nil || actor.Role != RoleOwner {
+		return nil, ErrForbidden
+	}
+	ids = normalizeIDs(ids)
+	if len(ids) == 0 || len(ids) > MaxBatchDelete {
+		return nil, ErrInvalidBatch
+	}
+	results := make([]BatchDeleteResult, 0, len(ids))
+	for _, id := range ids {
+		stats, err := uc.DeleteStudent(ctx, actor, id, force)
+		item := BatchDeleteResult{ID: id, OK: err == nil}
+		if err != nil {
+			item.Reason = batchReason(err)
+			if errors.Is(err, ErrStudentHasLedger) {
+				// 让前端知道是哪几条挡住了，便于二次确认后带 force 重试。
+				copied := stats
+				item.Deleted = &copied
+			}
+		} else {
+			copied := stats
+			item.Deleted = &copied
+		}
+		results = append(results, item)
+	}
+	return results, nil
+}
+
+// DeleteGuardians 批量删除家长账号：逐条执行，有在读学员的那条会返回 GUARDIAN_HAS_STUDENTS。
+func (uc *CRMUsecase) DeleteGuardians(ctx context.Context, actor *Staff, ids []string) ([]BatchDeleteResult, error) {
+	if actor == nil || actor.Role != RoleOwner {
+		return nil, ErrForbidden
+	}
+	ids = normalizeIDs(ids)
+	if len(ids) == 0 || len(ids) > MaxBatchDelete {
+		return nil, ErrInvalidBatch
+	}
+	results := make([]BatchDeleteResult, 0, len(ids))
+	for _, id := range ids {
+		err := uc.DeleteGuardian(ctx, actor, id)
+		item := BatchDeleteResult{ID: id, OK: err == nil}
+		if err != nil {
+			item.Reason = batchReason(err)
+		}
+		results = append(results, item)
+	}
+	return results, nil
+}
+
+func normalizeIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func batchReason(err error) string {
+	switch {
+	case errors.Is(err, ErrStudentHasLedger):
+		return "STUDENT_HAS_LESSON_LEDGER"
+	case errors.Is(err, ErrGuardianHasStudents):
+		return "GUARDIAN_HAS_STUDENTS"
+	case errors.Is(err, ErrStudentNotFound):
+		return "STUDENT_NOT_FOUND"
+	case errors.Is(err, ErrGuardianNotFound):
+		return "GUARDIAN_NOT_FOUND"
+	case errors.Is(err, ErrForbidden):
+		return "FORBIDDEN"
+	default:
+		return "INTERNAL"
+	}
 }
 
 func (uc *CRMUsecase) AddFollowUp(ctx context.Context, actor *Staff, studentID, method, content, concern, nextAction string, next *time.Time) (*FollowUp, error) {
