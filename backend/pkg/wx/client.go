@@ -20,6 +20,9 @@ import (
 // DefaultBaseURL 是微信开放接口的默认地址；单测通过 NewClientWithBaseURL 注入 httptest 地址。
 const DefaultBaseURL = "https://api.weixin.qq.com"
 
+// DefaultCloudBaseURL 是云托管「开放接口服务」的地址：走内网网关，不需要 HTTPS（平台文档明确）。
+const DefaultCloudBaseURL = "http://api.weixin.qq.com"
+
 // tokenRefreshMargin 提前刷新 access_token，避免边界过期。
 const tokenRefreshMargin = 5 * time.Minute
 
@@ -81,6 +84,9 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	now        func() time.Time
+	// cloud 为 true 时走微信云托管的「开放接口服务（云调用）」：
+	// 不取 access_token，由平台网关在容器内免鉴权转发微信开放接口。
+	cloud bool
 
 	mu          sync.Mutex
 	token       string
@@ -91,6 +97,22 @@ type Client struct {
 func NewClient(appID, appSecret string) *Client {
 	return NewClientWithBaseURL(appID, appSecret, DefaultBaseURL, &http.Client{Timeout: 10 * time.Second})
 }
+
+// NewCloudClient 走云调用通道：平台已开通「开放接口服务」并在「微信令牌权限」里
+// 配置了 subscribeMessage.send 时使用。不需要 AppSecret，也不取 access_token。
+func NewCloudClient(appID string) *Client {
+	return NewCloudClientWithBaseURL(appID, DefaultCloudBaseURL, &http.Client{Timeout: 10 * time.Second})
+}
+
+// NewCloudClientWithBaseURL 供单测注入 httptest 地址。
+func NewCloudClientWithBaseURL(appID, baseURL string, httpClient *http.Client) *Client {
+	c := NewClientWithBaseURL(appID, "", baseURL, httpClient)
+	c.cloud = true
+	return c
+}
+
+// InCloudMode 报告当前客户端是否走云调用。
+func (c *Client) InCloudMode() bool { return c.cloud }
 
 // NewClientWithBaseURL 供单测注入 httptest 地址；httpClient 为 nil 时使用 10s 超时。
 func NewClientWithBaseURL(appID, appSecret, baseURL string, httpClient *http.Client) *Client {
@@ -108,7 +130,11 @@ func NewClientWithBaseURL(appID, appSecret, baseURL string, httpClient *http.Cli
 
 // AccessToken 返回缓存的 access_token，必要时刷新。
 // 注意：不要在日志里打印返回值。
+// 云调用模式下不需要 token，直接返回错误提示调用方改走云调用分支。
 func (c *Client) AccessToken(ctx context.Context) (string, error) {
+	if c.cloud {
+		return "", errors.New("云调用模式不需要 access_token")
+	}
 	if c.appID == "" || c.appSecret == "" {
 		return "", errors.New("微信 AppID/AppSecret 未配置")
 	}

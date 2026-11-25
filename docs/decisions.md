@@ -477,5 +477,7 @@
 
 **回滚**：删掉 `HM_WX_SUBSCRIBE_TEMPLATES`（或 AppSecret）即整体退回“只发站内信”；`000006` 的 down 会删除两张新表，站内通知不受影响。
 
+**补充（2026-11-25）：云托管必须走「云调用」通道。** 实测容器内 `api.weixin.qq.com` 被平台 DNS 改写到 `169.254.10.1`，未在控制台「云调用 → 微信令牌权限」放行的接口一律 `connection refused`；同期 `www.baidu.com` 的 443 可通，证明公网出口本身正常。因此 `pkg/wx` 增加第二种调用方式：`HM_WX_CALL_MODE=cloud` 时用 `NewCloudClient`，请求 `http://api.weixin.qq.com`、不带 `access_token`（由平台网关鉴权）、也不需要 `HM_WX_APP_SECRET`；默认值仍是 `direct`，本地与非云托管环境行为不变。代价是生产依赖控制台配置（开放接口服务 + `subscribeMessage.send` 权限），配置缺失时表现为发送全部 `failed`，但业务写操作不受影响。
+
 
 

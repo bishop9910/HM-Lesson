@@ -32,12 +32,11 @@
 - [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET` 已在云端配置（2026-11-25），但**仍有两个阻断**（见下）
   - AppSecret 只放云托管环境变量，**禁止入库/写文档**
 - [x] **阻断 1 已解决**：`HM_WX_APP_SECRET` 已换成真实值（`hm-lesson-027` 日志里请求 URL 显示 `secret=***`，脱敏生效）；AppID 仍是 `wxc675e12f2b7cef7a`。
-- [ ] **阻断 2 仍在：容器连不上微信接口**。`hm-lesson-027`（16:00:00）依旧 `dial tcp 169.254.10.1:443: connect: connection refused`，尽管控制台「公网出口」开关是开着的。`169.254.10.1` 是链路本地地址 ⇒ DNS 把 `api.weixin.qq.com` 劫持到平台内网网关，而该网关没有为这个服务放行。
-  - 已加诊断：启动时 `probeEgress`（`backend/cmd/hm/egress.go`）分别解析并 TCP 连接 `api.weixin.qq.com` 与对照域名 `www.baidu.com`，日志带 `link_local` 标记。下一次发布的判读方式：
-    - 对照域名 443 通、微信域名 169.254.10.1 拒 ⇒ 平台劫持，需在云托管开通「云调用/开放接口服务」或确认服务与同主体小程序 AppID 关联；
-    - 两个都失败 ⇒ 公网出口实际未生效，需平台侧处理。
-  - `probeWXToken` 的 `hint` 现在能正确区分网络错误（`*url.Error`）与微信错误码；`pkg/wx` 的 `redactedError` 保留 `Unwrap` 以支持 `errors.As`。
-- [x] 启动日志可自检：`微信 access_token 获取成功，订阅消息可发送` = 配置与网络都通。
+- [ ] **阻断 2 根因已定位，代码已备好，等控制台配置**：`hm-lesson-028` 的出网体检证明——`www.baidu.com` 的 443 可通（出口正常），只有 `api.weixin.qq.com` 被解析到 `169.254.10.1` 并拒连。控制台「云调用 → 开放接口服务」已开，但「微信令牌权限」列表为空（未放行任何接口），所以网关拒绝一切微信域名请求。
+  - 已实现：`HM_WX_CALL_MODE=cloud` 云调用通道（`pkg/wx` 新增 `NewCloudClient`/`NewCloudClientWithBaseURL`，不取 access_token、请求带 `http://api.weixin.qq.com`、由平台网关鉴权）；`conf.WXCallMode`（`normalizeCallMode` 容错，默认 `direct`）；`buildSubscriptions` 按模式选客户端，云调用模式跳过 token 探测并打 info 日志。
+  - 待用户操作：控制台「微信令牌权限」→「配置接口」→ 添加**发送订阅消息**（`subscribeMessage.send`）；环境变量加 `HM_WX_CALL_MODE=cloud`；重新发布。
+  - 文档：`docs/deploy-wechat-cloudrun.md` §7.1.1 写了完整步骤与日志判读表。
+- [x] 启动日志可自检：云调用模式打「微信订阅消息使用云调用通道」；直连模式打「微信 access_token 获取成功，订阅消息可发送」。
 - [ ] 确认工具类目下这些模板可选（个人主体 + 未认证，模板库可能受限）
 - [x] 确认家长端是否已有 `openid`（`guardians.openid` 列已存在；登录时从 `X-WX-OPENID` 采集，需 `X-WX-SOURCE` 非空）
 

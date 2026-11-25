@@ -90,6 +90,33 @@ func TestExplicitDSNWins(t *testing.T) {
 	}
 }
 
+func TestNormalizeCallMode(t *testing.T) {
+	cases := map[string]string{
+		"":        "direct",
+		"direct":  "direct",
+		"cloud":   "cloud",
+		" Cloud ": "cloud",
+		"yun":     "cloud",
+		"weird":   "direct",
+	}
+	for in, want := range cases {
+		if got := normalizeCallMode(in); got != want {
+			t.Fatalf("normalizeCallMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoadCallModeFromEnv(t *testing.T) {
+	t.Setenv("HM_WX_CALL_MODE", "cloud")
+	if got := Load().WXCallMode; got != "cloud" {
+		t.Fatalf("HM_WX_CALL_MODE=cloud 解析为 %q", got)
+	}
+	t.Setenv("HM_WX_CALL_MODE", "")
+	if got := Load().WXCallMode; got != "direct" {
+		t.Fatalf("未配置时应回退 direct，实际 %q", got)
+	}
+}
+
 func TestParseSubscribeTemplates(t *testing.T) {
 	tpls, err := ParseSubscribeTemplates("")
 	if err != nil || tpls != nil {

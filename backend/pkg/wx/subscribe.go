@@ -61,11 +61,18 @@ func (c *Client) SendSubscribe(ctx context.Context, msg SubscribeMessage) error 
 }
 
 func (c *Client) sendOnce(ctx context.Context, payload []byte) error {
+	if c.cloud {
+		// 云调用：不要 access_token，平台网关按「微信令牌权限」里配置的接口鉴权。
+		return c.postSubscribe(ctx, c.baseURL+"/cgi-bin/message/subscribe/send", "", payload)
+	}
 	token, err := c.AccessToken(ctx)
 	if err != nil {
 		return err
 	}
-	endpoint := c.baseURL + "/cgi-bin/message/subscribe/send?access_token=" + token
+	return c.postSubscribe(ctx, c.baseURL+"/cgi-bin/message/subscribe/send?access_token="+token, token, payload)
+}
+
+func (c *Client) postSubscribe(ctx context.Context, endpoint, token string, payload []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("构造订阅消息请求: %w", err)

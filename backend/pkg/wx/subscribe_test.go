@@ -132,3 +132,53 @@ func TestSendSubscribeRequiresOpenID(t *testing.T) {
 		t.Fatal("缺少 openid 应报错")
 	}
 }
+
+// 云调用模式：不取 access_token，请求也不带 access_token 参数（平台网关鉴权）。
+func TestSendSubscribeCloudModeSkipsToken(t *testing.T) {
+	var tokenCalls, sendCalls int32
+	var sendQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cgi-bin/token":
+			atomic.AddInt32(&tokenCalls, 1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "should-not-be-used", "expires_in": 7200})
+		case "/cgi-bin/message/subscribe/send":
+			atomic.AddInt32(&sendCalls, 1)
+			sendQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(map[string]any{"errcode": 0, "errmsg": "ok"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewCloudClientWithBaseURL("appid", srv.URL, srv.Client())
+	if !client.InCloudMode() {
+		t.Fatal("InCloudMode 应为 true")
+	}
+	// 云调用模式不要求 AppSecret。
+	err := client.SendSubscribe(context.Background(), SubscribeMessage{
+		ToUser:     "openid-1",
+		TemplateID: "tmpl-1",
+		Data:       map[string]string{"thing1": "作业"},
+	})
+	if err != nil {
+		t.Fatalf("发送失败: %v", err)
+	}
+	if tokenCalls != 0 {
+		t.Fatalf("云调用模式不应请求 access_token，实际 %d 次", tokenCalls)
+	}
+	if sendCalls != 1 {
+		t.Fatalf("send 调用次数 = %d", sendCalls)
+	}
+	if sendQuery != "" {
+		t.Fatalf("云调用请求不应带 query，实际 %q", sendQuery)
+	}
+}
+
+func TestAccessTokenRejectsCloudMode(t *testing.T) {
+	client := NewCloudClientWithBaseURL("appid", "http://127.0.0.1:1", nil)
+	if _, err := client.AccessToken(context.Background()); err == nil {
+		t.Fatal("云调用模式调用 AccessToken 应报错")
+	}
+}

@@ -32,7 +32,13 @@ func checkHost(ctx context.Context, logger *slog.Logger, host string) {
 		return
 	}
 	logger.Info("出网体检：DNS 解析完成", "host", host, "addrs", strings.Join(addrs, ","), "link_local", anyLinkLocal(addrs))
-	for _, addr := range addrs {
+	// 优先只连 IPv4：容器通常没有 IPv6 路由，逐条试 IPv6 只会刷出无意义的
+	// "network is unreachable"，把真正的问题淹掉。
+	targets := addrs
+	if v4 := ipv4Only(addrs); len(v4) > 0 {
+		targets = v4
+	}
+	for _, addr := range targets {
 		dialer := net.Dialer{Timeout: 3 * time.Second}
 		conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(addr, "443"))
 		if err != nil {
@@ -42,6 +48,17 @@ func checkHost(ctx context.Context, logger *slog.Logger, host string) {
 		_ = conn.Close()
 		logger.Info("出网体检：TCP 443 连接成功", "host", host, "addr", addr)
 	}
+}
+
+// ipv4Only 过滤出 IPv4 地址；解析不到时返回空切片，调用方退回全部地址。
+func ipv4Only(addrs []string) []string {
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // anyLinkLocal 判断解析结果里是否有 169.254.0.0/16 这类链路本地地址。

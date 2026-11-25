@@ -199,6 +199,7 @@ const res = await wx.cloud.uploadFile({
 | `HM_WX_APP_ID` | `wx...` | 小程序 AppID |
 | `HM_WX_APP_SECRET` | `...` | 仅订阅消息、`code2session` 兜底；callContainer 主路径不需要，能不用就不配 |
 | `HM_WX_SUBSCRIBE_TEMPLATES` | 见 §7.1 | 订阅消息模板 JSON；**未配置则整条链路 no-op**，只发站内信 |
+| `HM_WX_CALL_MODE` | `cloud` | `direct`=直连（本地/非云托管）；`cloud`=云托管「开放接口服务（云调用）」。**云托管生产必须配 `cloud`**，否则 `api.weixin.qq.com` 会命中平台内网网关而被拒（§7.1.1） |
 | `HM_WX_TMPL_LANG` | `zh_CN` | 模板语言，可选，默认 `zh_CN` |
 | `HM_WX_MP_STATE` | `formal` | `miniprogram_state`；联调可用 `trial` / `developer`，默认 `formal` |
 | `HM_STORAGE_DRIVER` | `cloud` / `minio` | 有 `COS_BUCKET` 时默认 `cloud` |
@@ -235,6 +236,33 @@ const res = await wx.cloud.uploadFile({
 - 关键词类型前缀决定截断长度（`thing`≤20、`phrase`≤5、`name`≤10、`number`/`date`/`time` 不截断），服务端渲染时统一截断，避免 47003。
 - 云托管环境变量里 JSON 建议压成一行；改完环境变量**必须重新构建/发布版本**才会生效（只改变量不重建不会更新镜像里的代码）。
 - 发送由进程内 worker 每 30 秒取一次 `notification_deliveries`，失败按 1/2/4 分钟退避（上限 10 分钟）重试，最多 3 次；永久错误（43101 用户拒收、47003 参数错等）直接置 `failed` 不重试。
+
+### 7.1.1 云托管内必须走「云调用」通道
+
+云托管会把容器内的 `api.weixin.qq.com` 解析到平台内网网关（实测 `169.254.10.1`）。**没有在控制台放行的请求会被直接拒绝**，表现为：
+
+```text
+dial tcp 169.254.10.1:443: connect: connection refused
+```
+
+同时容器访问其它公网域名是正常的（`www.baidu.com` TCP 443 可通），所以这不是「公网出口没开」。
+
+配置步骤：
+
+1. 云托管控制台 → 服务管理 → **云调用** → 打开「开放接口服务」；
+2. 在「微信令牌权限」里点「配置接口」，添加**发送订阅消息**（接口名 `subscribeMessage.send`）。列表为空时任何微信接口调用都会被拒；
+3. 环境变量设 `HM_WX_CALL_MODE=cloud`（直连模式不需要，云托管生产必须）；
+4. 重新发布版本。
+
+`cloud` 模式下后端不再取 `access_token`（模板由平台网关鉴权），请求地址为 `http://api.weixin.qq.com/cgi-bin/message/subscribe/send`，因此 `HM_WX_APP_SECRET` 在云托管里其实可以留空——它只对 `direct` 模式有意义。
+
+启动日志排查顺序：
+
+| 日志 | 含义 |
+| --- | --- |
+| `出网体检：TCP 443 连接失败 host=api.weixin.qq.com addr=169.254.10.1 ... connection refused` | 云调用未放行该服务，或「微信令牌权限」没加 `subscribeMessage.send` |
+| `微信订阅消息使用云调用通道（HM_WX_CALL_MODE=cloud）` | 已进入云调用模式（不再探测 access_token） |
+| `微信 access_token 获取成功，订阅消息可发送` | `direct` 模式下的成功标志 |
 
 ---
 

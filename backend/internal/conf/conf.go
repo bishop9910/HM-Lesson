@@ -34,6 +34,12 @@ type Config struct {
 	WXTemplateLang       string
 	WXMiniprogramState   string
 
+	// WXCallMode 选择调用微信接口的通道：
+	//   direct（默认）—— 直连 api.weixin.qq.com，用 appid+secret 换 access_token；
+	//   cloud        —— 走云托管「开放接口服务（云调用）」，不取 token，由平台网关鉴权。
+	// 云托管生产环境 api.weixin.qq.com 被解析到平台内网网关，只有 cloud 模式能通。
+	WXCallMode string
+
 	// 首次启动引导：库里没有任何老师时创建第一个 owner。
 	// 生产环境通过云托管环境变量注入，不要写默认密码。
 	BootstrapName     string
@@ -102,12 +108,24 @@ func Load() Config {
 		// formal=正式版；trial=体验版；developer=开发版（真机调试用）。
 		WXTemplateLang:     env("HM_WX_TMPL_LANG", "zh_CN"),
 		WXMiniprogramState: env("HM_WX_MP_STATE", "formal"),
+		WXCallMode:         normalizeCallMode(env("HM_WX_CALL_MODE", "direct")),
 
 		BootstrapName:     env("HM_BOOTSTRAP_NAME", "老师"),
 		BootstrapPhone:    env("HM_BOOTSTRAP_PHONE", ""),
 		BootstrapPassword: env("HM_BOOTSTRAP_PASSWORD", ""),
 
 		LessonHoursPerSession: envFloat("HM_LESSON_HOURS_PER_SESSION", 1),
+	}
+}
+
+// normalizeCallMode 只接受 direct / cloud，大小写与空值容错，其余回退 direct。
+// 云托管生产必须显式配 HM_WX_CALL_MODE=cloud，否则请求会打到被劫持的地址。
+func normalizeCallMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "cloud", "yun", "wxcloud":
+		return "cloud"
+	default:
+		return "direct"
 	}
 }
 

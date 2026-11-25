@@ -219,13 +219,25 @@ func buildSubscriptions(cfg conf.Config, db *gorm.DB, logger *slog.Logger) *biz.
 		templates[key] = biz.SubscribeTemplate{ID: tpl.ID, Fields: tpl.Fields}
 	}
 	var sender biz.SubscribeSender
-	if cfg.WXAppID != "" && cfg.WXAppSecret != "" && len(templates) > 0 {
-		client := wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)
+	cloudMode := cfg.WXCallMode == "cloud"
+	if cfg.WXAppID != "" && len(templates) > 0 && (cloudMode || cfg.WXAppSecret != "") {
+		var client *wx.Client
+		if cloudMode {
+			// 云调用：平台网关鉴权，不需要 AppSecret，也不取 access_token。
+			client = wx.NewCloudClient(cfg.WXAppID)
+		} else {
+			client = wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)
+		}
 		sender = wxSubscribeSender{client: client}
 		go probeEgress(logger)
-		go probeWXToken(client, cfg.WXAppID, logger)
+		if cloudMode {
+			logger.Info("微信订阅消息使用云调用通道（HM_WX_CALL_MODE=cloud），跳过 access_token 探测",
+				"app_id", cfg.WXAppID, "templates", len(templates))
+		} else {
+			go probeWXToken(client, cfg.WXAppID, logger)
+		}
 	} else {
-		logger.Info("微信订阅消息未启用：需要 HM_WX_APP_ID、HM_WX_APP_SECRET 与 HM_WX_SUBSCRIBE_TEMPLATES；家长仍可在小程序内看到站内通知")
+		logger.Info("微信订阅消息未启用：需要 HM_WX_APP_ID、HM_WX_SUBSCRIBE_TEMPLATES 与（直连模式下的）HM_WX_APP_SECRET；家长仍可在小程序内看到站内通知")
 	}
 	return biz.NewSubscriptionUsecase(data.NewSubscriptionRepo(db), sender, templates, cfg.WXMiniprogramState, logger)
 }
