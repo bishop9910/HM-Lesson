@@ -205,8 +205,8 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
 5. **任务删除是级联的**
    `draft|closed` 可删；事务清理 `submissions → task_assignments → tasks`，并清理通知。`published` 必须先结束。
 
-6. **通知是站内通知，不是微信订阅消息**
-   `notifications` 表 + 家长门户弹窗；微信服务通知尚未接（P0）。
+6. **通知是站内通知 + 微信订阅消息**
+   `notifications` 表 + 家长门户弹窗是主路径；微信订阅消息已接（见 §7），未配置模板 ID 时自动退化。
 
 7. **小程序首屏是 `pages/home/index`**
    `pages/index/index.vue` 已不注册；改首页不要改错文件。所有 `reLaunch` 指向 `pages/home/index`。
@@ -221,9 +221,12 @@ GET  /api/v1/lesson-ledger                         # ?student_id=&from=&to=
     改环境变量生成的是“配置版本”，复用旧镜像。代码改动必须让云托管从新 commit 构建；构建后确认镜像 tag 变化。
 
 11. **迁移**
-    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 5 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
+    启动时 `data.Migrate` 用同一连接 `GET_LOCK('hm_migrate',30)`；当前 8 个版本。新增迁移必须成对 up/down，`migrate_test.go` 的期望数量要同步。
 
-12. **MySQL 5.7**
+12. **`CREATE TABLE IF NOT EXISTS` 会静默骗过迁移（2026-11-25 线上事故）**
+    `000002_teaching` 早就用旧列集建过 `slots/bookings/lesson_accounts/lesson_ledger`，`000007` 用 `IF NOT EXISTS` 建同名的四张表 → 一句都没执行、迁移版本却照样记为已执行，线上 5 个接口全部 `Error 1054 Unknown column`。教训：**新建表前先 `grep` 一遍 migrations 里有没有同名表**；改已存在的表必须走 `ALTER`，不能用 `CREATE TABLE IF NOT EXISTS` 蒙过去。修复见 `000008_fix_booking_lesson_tables`（DROP 空表后按新结构重建）。
+
+13. **MySQL 5.7**
     没有部分唯一索引、没有 RETURNING/ON CONFLICT/JSONB；`CHECK` 会被解析但忽略，业务层必须校验。字符集 `utf8mb4_unicode_ci`。
 
 ---
@@ -289,9 +292,9 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 
 ---
 
-## 7.5 已完成：M4 一对一预约与课时（2026-11-25，待真实 MySQL 验证迁移）
+## 7.5 已完成：M4 一对一预约与课时（2026-11-25）
 
-**迁移**：`backend/migrations/000007_booking_lesson.up.sql` / `.down.sql`（`slots`、`bookings`、`lesson_accounts`、`lesson_ledger`）；`internal/data/migrate_test.go` 期望 7 个迁移。表结构细节见 `docs/data-model.md` §3.4。
+**迁移**：`backend/migrations/000007_booking_lesson.up.sql` / `.down.sql`（`slots`、`bookings`、`lesson_accounts`、`lesson_ledger`）+ **`000008_fix_booking_lesson_tables.up.sql` / `.down.sql`（必须一起跑，否则线上全是 1054）**；`internal/data/migrate_test.go` 期望 8 个迁移。表结构细节见 `docs/data-model.md` §3.4；事故原因见 §5 第 12 条。
 
 **代码接入点**
 
@@ -319,7 +322,7 @@ HM_WX_SUBSCRIBE_TEMPLATES={"task_published":{"id":"","fields":{"thing1":"title",
 
 **未做/待跟进**
 
-- [ ] 真实 MySQL 5.7 上跑 `000007` up/down（本机无 Docker，只跑了单测）；
+- [x] 真实 MySQL 5.7 上验证：2026-11-25 部署后发现 `000007` 被 `IF NOT EXISTS` 静默跳过（`000002` 已建过同名旧表），已用 `000008` 重建四张表，待重新发布后复测接口；
 - [ ] 预约通知 AF-07/08/09：`notifications.guardian_id` 目前 NOT NULL，无法给老师发通知，需迁移支持 staff 维度；
 - [ ] 班课（班级名单、上课记录、不扣课时）；
 - [ ] 课前 24h 提醒（AF-10，需定时任务 + 订阅消息模板）。
