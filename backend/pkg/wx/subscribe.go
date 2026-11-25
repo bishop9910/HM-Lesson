@@ -74,7 +74,7 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// 网络类错误会把完整 URL（含 access_token）带进文本，必须脱敏后再返回。
-		return fmt.Errorf("发送订阅消息: %s", redact(err.Error(), token))
+		return &redactedError{msg: "发送订阅消息: " + redact(err.Error(), token), cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

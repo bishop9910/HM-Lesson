@@ -31,10 +31,13 @@
   - [ ] 作业被打回通知：建议新建（作业名称 + 学员姓名 + 打回原因），**等审核**
 - [x] 云托管环境变量：`HM_WX_APP_ID`、`HM_WX_APP_SECRET` 已在云端配置（2026-11-25），但**仍有两个阻断**（见下）
   - AppSecret 只放云托管环境变量，**禁止入库/写文档**
-- [ ] **阻断 1：`HM_WX_APP_SECRET` 的值是占位文案**。`hm-lesson-026` 启动日志里请求 URL 显示 `secret=填写的密钥`，需换成微信后台「开发管理 → 开发设置 → AppSecret」的真实值再发布。
-- [ ] **阻断 2：云托管容器连不上微信接口**。同一日志：`dial tcp 169.254.10.1:443: connect: connection refused`（`api.weixin.qq.com` 被解析到内网地址后拒绝），即容器**没有公网出口**。需要在云托管控制台为该服务开通公网访问/出口（出站），开通后启动日志应变为「微信 access_token 获取成功」。
-  - 代码侧已做的配合：`pkg/wx` 的错误文本已脱敏（secret/access_token 替换为 `***`），`probeWXToken` 失败时输出 `hint` 区分“密钥不对”与“网络出不去”。
-- [x] 启动日志可自检：`微信 access_token 获取成功，订阅消息可发送` = 配置与网络都通；`获取失败` 带 `hint`（网络出口 / 40013 AppID / 40125 AppSecret / 40164 IP 白名单）。
+- [x] **阻断 1 已解决**：`HM_WX_APP_SECRET` 已换成真实值（`hm-lesson-027` 日志里请求 URL 显示 `secret=***`，脱敏生效）；AppID 仍是 `wxc675e12f2b7cef7a`。
+- [ ] **阻断 2 仍在：容器连不上微信接口**。`hm-lesson-027`（16:00:00）依旧 `dial tcp 169.254.10.1:443: connect: connection refused`，尽管控制台「公网出口」开关是开着的。`169.254.10.1` 是链路本地地址 ⇒ DNS 把 `api.weixin.qq.com` 劫持到平台内网网关，而该网关没有为这个服务放行。
+  - 已加诊断：启动时 `probeEgress`（`backend/cmd/hm/egress.go`）分别解析并 TCP 连接 `api.weixin.qq.com` 与对照域名 `www.baidu.com`，日志带 `link_local` 标记。下一次发布的判读方式：
+    - 对照域名 443 通、微信域名 169.254.10.1 拒 ⇒ 平台劫持，需在云托管开通「云调用/开放接口服务」或确认服务与同主体小程序 AppID 关联；
+    - 两个都失败 ⇒ 公网出口实际未生效，需平台侧处理。
+  - `probeWXToken` 的 `hint` 现在能正确区分网络错误（`*url.Error`）与微信错误码；`pkg/wx` 的 `redactedError` 保留 `Unwrap` 以支持 `errors.As`。
+- [x] 启动日志可自检：`微信 access_token 获取成功，订阅消息可发送` = 配置与网络都通。
 - [ ] 确认工具类目下这些模板可选（个人主体 + 未认证，模板库可能受限）
 - [x] 确认家长端是否已有 `openid`（`guardians.openid` 列已存在；登录时从 `X-WX-OPENID` 采集，需 `X-WX-SOURCE` 非空）
 

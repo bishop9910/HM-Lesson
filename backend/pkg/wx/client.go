@@ -49,6 +49,17 @@ func IsPermanent(err error) bool {
 	}
 }
 
+// redactedError 保留底层错误类型（便于 errors.As 区分网络错误与 API 错误），
+// 但对外只暴露脱敏后的文本，避免 secret/access_token 进入日志。
+type redactedError struct {
+	msg   string
+	cause error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+
+func (e *redactedError) Unwrap() error { return e.cause }
+
 // redact 把敏感串（app secret、access_token）从错误文本里抹掉。
 //
 // net/http 的网络错误会把完整请求 URL 拼进 err.Error()，
@@ -136,7 +147,7 @@ func (c *Client) fetchToken(ctx context.Context) (string, time.Duration, error) 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// 网络类错误会把完整 URL（含 secret）带进文本，必须脱敏后再返回，否则会写进日志。
-		return "", 0, fmt.Errorf("请求 access_token: %s", redact(err.Error(), c.appSecret))
+		return "", 0, &redactedError{msg: "请求 access_token: " + redact(err.Error(), c.appSecret), cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

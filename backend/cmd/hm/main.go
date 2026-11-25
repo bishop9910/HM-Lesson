@@ -222,6 +222,7 @@ func buildSubscriptions(cfg conf.Config, db *gorm.DB, logger *slog.Logger) *biz.
 	if cfg.WXAppID != "" && cfg.WXAppSecret != "" && len(templates) > 0 {
 		client := wx.NewClient(cfg.WXAppID, cfg.WXAppSecret)
 		sender = wxSubscribeSender{client: client}
+		go probeEgress(logger)
 		go probeWXToken(client, cfg.WXAppID, logger)
 	} else {
 		logger.Info("微信订阅消息未启用：需要 HM_WX_APP_ID、HM_WX_APP_SECRET 与 HM_WX_SUBSCRIBE_TEMPLATES；家长仍可在小程序内看到站内通知")

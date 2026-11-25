@@ -2,8 +2,10 @@ package wx
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +39,11 @@ func TestAccessTokenErrorRedactsSecret(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "请求 access_token") {
 		t.Fatalf("错误信息缺少上下文: %s", err.Error())
+	}
+	// 上层（cmd/hm 的 hint 分类）依赖 errors.As 识别网络错误，脱敏不能把类型丢掉。
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		t.Fatalf("脱敏后应仍可用 errors.As 取到 *url.Error: %T", err)
 	}
 }
 
